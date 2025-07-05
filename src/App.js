@@ -452,13 +452,23 @@ function Calendar({ db, user, appId }) {
         });
         return () => unsubscribe();
     }, [db, appId]);
+    
+    // Helper to format date for datetime-local input, considering timezone
+    const formatDateTimeLocal = (date) => {
+        const d = new Date(date);
+        // Adjust for timezone offset to display correctly in the local time of the user's browser
+        const timezoneOffset = d.getTimezoneOffset() * 60000; // in milliseconds
+        const localDate = new Date(d.getTime() - timezoneOffset);
+        return localDate.toISOString().slice(0, 16);
+    };
+
 
     const handleOpenModal = (event = null, date = null) => {
         if (event) {
             setSelectedEvent(event);
             setEventTitle(event.title);
-            setEventStart(event.start.toISOString().split('T')[0]);
-            setEventEnd(event.end.toISOString().split('T')[0]);
+            setEventStart(formatDateTimeLocal(event.start));
+            setEventEnd(formatDateTimeLocal(event.end));
             setEventDescription(event.description || '');
             setEventLink(event.link || '');
             setEventParticipants(event.participants.map(p => p.uid));
@@ -466,9 +476,13 @@ function Calendar({ db, user, appId }) {
             setSelectedEvent(null);
             setEventTitle('');
             const initialDate = date ? new Date(date) : new Date();
-            initialDate.setHours(0,0,0,0);
-            setEventStart(initialDate.toISOString().split('T')[0]);
-            setEventEnd(initialDate.toISOString().split('T')[0]);
+            if(date) initialDate.setHours(9,0); // Default to 9:00 AM if a date is clicked
+            
+            setEventStart(formatDateTimeLocal(initialDate));
+            // Default end time to one hour after start
+            const endDate = new Date(initialDate.getTime() + 60 * 60 * 1000);
+            setEventEnd(formatDateTimeLocal(endDate));
+
             setEventDescription('');
             setEventLink('');
             setEventParticipants([]);
@@ -520,7 +534,6 @@ function Calendar({ db, user, appId }) {
         
         const start = new Date(eventStart);
         const end = new Date(eventEnd);
-        end.setHours(23, 59, 59, 999); 
 
         const participantsData = users.filter(u => eventParticipants.includes(u.uid)).map(u => ({ uid: u.uid, displayName: u.displayName }));
 
@@ -625,12 +638,12 @@ function Calendar({ db, user, appId }) {
                     </div>
                     <div className="grid grid-cols-2 gap-4 mb-4">
                         <div>
-                            <label className="block text-gray-700 text-sm font-bold mb-2" htmlFor="event-start">開始日期</label>
-                            <input id="event-start" type="date" value={eventStart} onChange={e => setEventStart(e.target.value)} className="shadow appearance-none border rounded w-full py-2 px-3 text-gray-700" />
+                            <label className="block text-gray-700 text-sm font-bold mb-2" htmlFor="event-start">開始時間</label>
+                            <input id="event-start" type="datetime-local" value={eventStart} onChange={e => setEventStart(e.target.value)} className="shadow appearance-none border rounded w-full py-2 px-3 text-gray-700" />
                         </div>
                         <div>
-                            <label className="block text-gray-700 text-sm font-bold mb-2" htmlFor="event-end">結束日期</label>
-                            <input id="event-end" type="date" value={eventEnd} onChange={e => setEventEnd(e.target.value)} className="shadow appearance-none border rounded w-full py-2 px-3 text-gray-700" />
+                            <label className="block text-gray-700 text-sm font-bold mb-2" htmlFor="event-end">結束時間</label>
+                            <input id="event-end" type="datetime-local" value={eventEnd} onChange={e => setEventEnd(e.target.value)} className="shadow appearance-none border rounded w-full py-2 px-3 text-gray-700" />
                         </div>
                     </div>
                     <div className="mb-4">
