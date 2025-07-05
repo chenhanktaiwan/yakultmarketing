@@ -709,28 +709,25 @@ function Chat({ db, user, appId }) {
         const unsubscribe = onSnapshot(q, (snapshot) => {
             const rooms = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
             // Ensure General chat exists
-            const generalChatExists = rooms.some(room => room.id === 'general');
-            if (!generalChatExists) {
-                const generalChatRef = doc(db, "artifacts", appId, "public", "data", "chatRooms", "general");
-                getDoc(generalChatRef).then(docSnap => {
-                    if (!docSnap.exists()) {
-                         setDoc(generalChatRef, {
-                            name: "公開聊天室",
-                            type: "group",
-                            members: [], // Or add all users by default
-                            createdAt: serverTimestamp()
-                        });
-                    }
-                })
-            }
+            const generalChatRef = doc(db, "artifacts", appId, "public", "data", "chatRooms", "general");
+            getDoc(generalChatRef).then(docSnap => {
+                if (!docSnap.exists()) {
+                     setDoc(generalChatRef, {
+                        name: "公開聊天室",
+                        type: "group",
+                        members: users.map(u => u.id), // Add all users to general chat
+                        createdAt: serverTimestamp()
+                    });
+                }
+            })
             setChatRooms(rooms);
-            if (!activeChat && rooms.find(r => r.id === 'general')) {
-                setActiveChat({ id: 'general', name: '公開聊天室', type: 'group' });
+            if (!activeChat) {
+                setActiveChat({ id: 'general', name: '公開聊天室', type: 'group', members: users.map(u=>u.id) });
             }
         });
 
         return unsubscribe;
-    }, [db, user, appId, activeChat]);
+    }, [db, user, appId, users, activeChat]);
 
     // Fetch messages for the active chat room
     useEffect(() => {
@@ -768,7 +765,6 @@ function Chat({ db, user, appId }) {
     const startDirectChat = async (targetUser) => {
         if (targetUser.id === user.uid) return;
         
-        // Create a unique, consistent ID for the 1-on-1 chat
         const chatRoomId = [user.uid, targetUser.id].sort().join('_');
         const chatRoomRef = doc(db, "artifacts", appId, "public", "data", "chatRooms", chatRoomId);
         
@@ -778,34 +774,40 @@ function Chat({ db, user, appId }) {
                 type: 'direct',
                 members: [user.uid, targetUser.id],
                 memberNames: {[user.uid]: user.displayName, [targetUser.id]: targetUser.displayName},
-                memberPhotos: {[user.uid]: user.photoURL, [targetUser.id]: targetUser.photoURL},
+                memberPhotos: {[user.uid]: user.photoURL || '', [targetUser.id]: targetUser.photoURL || ''},
                 createdAt: serverTimestamp()
             });
         }
         
+        // Construct a complete object for setActiveChat to prevent crashes
         setActiveChat({
             id: chatRoomId,
             type: 'direct',
-            name: targetUser.displayName,
-            photoURL: targetUser.photoURL
+            name: targetUser.displayName, // For display in header
+            members: [user.uid, targetUser.id],
+            memberNames: {[user.uid]: user.displayName, [targetUser.id]: targetUser.displayName},
+            memberPhotos: {[user.uid]: user.photoURL || '', [targetUser.id]: targetUser.photoURL || ''}
         });
     };
 
     const getChatName = (room) => {
+        if (!room) return '';
         if (room.type === 'group') {
             return room.name;
         }
-        // For direct chats, find the other user's name
         const otherUserId = room.members.find(id => id !== user.uid);
         return room.memberNames?.[otherUserId] || '私人訊息';
     };
     
     const getChatPhoto = (room) => {
+        if (!room) return '';
         if (room.type === 'group') {
-            return `https://placehold.co/40x40/A2C4C9/FFFFFF?text=${room.name[0]}`;
+            return `https://placehold.co/40x40/A2C4C9/FFFFFF?text=${room.name ? room.name[0] : 'G'}`;
         }
         const otherUserId = room.members.find(id => id !== user.uid);
-        return room.memberPhotos?.[otherUserId] || `https://placehold.co/40x40/5F828B/FFFFFF?text=?`;
+        const photo = room.memberPhotos?.[otherUserId];
+        const name = room.memberNames?.[otherUserId];
+        return photo || `https://placehold.co/40x40/5F828B/FFFFFF?text=${name ? name[0] : '?'}`;
     }
 
     return (
@@ -820,7 +822,7 @@ function Chat({ db, user, appId }) {
                     <h3 className="p-3 text-sm font-semibold text-gray-500">群組</h3>
                      <ul>
                         {chatRooms.filter(r => r.type === 'group').map(room => (
-                            <li key={room.id} onClick={() => setActiveChat({id: room.id, name: room.name, type: 'group'})} className={`flex items-center gap-3 p-3 cursor-pointer hover:bg-gray-100 ${activeChat?.id === room.id ? 'bg-gray-200' : ''}`}>
+                            <li key={room.id} onClick={() => setActiveChat(room)} className={`flex items-center gap-3 p-3 cursor-pointer hover:bg-gray-100 ${activeChat?.id === room.id ? 'bg-gray-200' : ''}`}>
                                 <img src={getChatPhoto(room)} alt="group avatar" className="w-10 h-10 rounded-full" />
                                 <span className="font-medium">{getChatName(room)}</span>
                             </li>
@@ -852,7 +854,7 @@ function Chat({ db, user, appId }) {
                                 {messages.map(msg => (
                                     <div key={msg.id} className={`flex items-end gap-3 ${msg.senderId === user.uid ? 'justify-end' : 'justify-start'}`}>
                                         {msg.senderId !== user.uid && (
-                                            <img src={msg.senderPhotoURL || `https://placehold.co/40x40/5F828B/FFFFFF?text=${msg.senderName[0]}`} alt="sender" className="w-8 h-8 rounded-full" />
+                                            <img src={msg.senderPhotoURL || `https://placehold.co/40x40/5F828B/FFFFFF?text=${msg.senderName ? msg.senderName[0] : '?'}`} alt="sender" className="w-8 h-8 rounded-full" />
                                         )}
                                         <div className={`max-w-xs lg:max-w-md px-4 py-2 rounded-xl ${msg.senderId === user.uid ? 'bg-[#5F828B] text-white' : 'bg-white'}`}>
                                             <p className="text-sm">{msg.text}</p>
