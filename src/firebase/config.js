@@ -3,15 +3,15 @@ import { initializeApp } from 'firebase/app';
 import { getAuth } from 'firebase/auth';
 import { getFirestore } from 'firebase/firestore';
 
-// --- 你的 Firebase 連接設定 ---
+// --- 你的 Firebase 連接設定 (現在從保險箱讀取) ---
 const firebaseConfig = {
-  apiKey: "AIzaSyA2tq_5whGRqB-6lqneEsdUEJ8DSD_-hII",
-  authDomain: "yakulttwmarketing.firebaseapp.com",
-  projectId: "yakulttwmarketing",
-  storageBucket: "yakulttwmarketing.firebasestorage.app",
-  messagingSenderId: "1023004807231",
-  appId: "1:1023004807231:web:cf5b79d2709f548381a88a",
-  measurementId: "G-6G7GCT6GLB"
+  apiKey: process.env.REACT_APP_FIREBASE_API_KEY,
+  authDomain: process.env.REACT_APP_FIREBASE_AUTH_DOMAIN,
+  projectId: process.env.REACT_APP_FIREBASE_PROJECT_ID,
+  storageBucket: process.env.REACT_APP_FIREBASE_STORAGE_BUCKET,
+  messagingSenderId: process.env.REACT_APP_FIREBASE_MESSAGING_SENDER_ID,
+  appId: process.env.REACT_APP_FIREBASE_APP_ID,
+  measurementId: process.env.REACT_APP_FIREBASE_MEASUREMENT_ID
 };
 
 // --- 初始化 Firebase App ---
