@@ -20,7 +20,9 @@ import {
     onSnapshot,
     deleteDoc,
     updateDoc,
-    serverTimestamp
+    serverTimestamp,
+    Timestamp,
+    getDocs
 } from 'firebase/firestore';
 
 // --- Firebase Configuration ---
@@ -36,13 +38,11 @@ const firebaseConfig = {
 };
 
 // Initialize Firebase
-// We will initialize it inside the component to handle potential config errors.
 let firebaseApp;
 try {
     firebaseApp = initializeApp(firebaseConfig);
 } catch (e) {
     console.error("Firebase aponitialization error before component mount:", e);
-    // This error will be caught and displayed within the App component.
 }
 
 
@@ -61,6 +61,8 @@ const Icon = ({ name, className }) => {
         'send': <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="m22 2-7 20-4-9-9-4Z"/><path d="M22 2 11 13"/></svg>,
         'key': <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="7.5" cy="15.5" r="5.5"/><path d="m21 2-9.6 9.6"/><path d="m15.5 7.5 3 3L22 7l-3-3"/></svg>,
         'shield-check': <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10"/><path d="m9 12 2 2 4-4"/></svg>,
+        'chevron-left': <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="m15 18-6-6 6-6"/></svg>,
+        'chevron-right': <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="m9 18 6-6-6-6"/></svg>,
     };
     return <span className={className}>{icons[name]}</span>;
 };
@@ -69,12 +71,12 @@ const Modal = ({ isOpen, onClose, title, children }) => {
     if (!isOpen) return null;
     return (
         <div className="fixed inset-0 bg-black bg-opacity-50 z-50 flex justify-center items-center p-4">
-            <div className="bg-white rounded-lg shadow-xl w-full max-w-md m-4">
+            <div className="bg-white rounded-lg shadow-xl w-full max-w-lg m-4">
                 <div className="p-4 border-b flex justify-between items-center">
                     <h3 className="text-lg font-semibold text-gray-800">{title}</h3>
-                    <button onClick={onClose} className="text-gray-500 hover:text-gray-800">&times;</button>
+                    <button onClick={onClose} className="text-gray-500 hover:text-gray-800 text-2xl leading-none">&times;</button>
                 </div>
-                <div className="p-6">
+                <div className="p-6 max-h-[70vh] overflow-y-auto">
                     {children}
                 </div>
             </div>
@@ -96,15 +98,13 @@ function App() {
     const [appId, setAppId] = useState('default-app-id'); // Use a default for deployed apps
 
     useEffect(() => {
-        // Add a check for placeholder values
         if (firebaseConfig.apiKey === "YOUR_API_KEY") {
             setError("設定錯誤：請在 GitHub 的 src/App.js 檔案中，將 firebaseConfig 的預留位置換成您自己的真實設定。");
             setLoading(false);
-            return; // Stop execution if config is not set
+            return; 
         }
 
         try {
-            // firebaseApp is now initialized in this file
             const firebaseAuth = getAuth(firebaseApp);
             const firestoreDb = getFirestore(firebaseApp);
             
@@ -113,7 +113,6 @@ function App() {
 
             const unsubscribe = onAuthStateChanged(firebaseAuth, async (currentUser) => {
                 if (currentUser) {
-                    // For a real app, you might want a more robust way to get the appId
                     const userDocRef = doc(firestoreDb, "artifacts", appId, "users", currentUser.uid);
                     const userDocSnap = await getDoc(userDocRef);
 
@@ -134,7 +133,6 @@ function App() {
                     }
                     setUser(currentUser);
                 } else {
-                    // No user is signed in. Let the LoginScreen handle it.
                     setUser(null);
                     setUserData(null);
                 }
@@ -166,7 +164,6 @@ function App() {
     }
 
     if (!userData) {
-        // This can happen briefly while userData is being fetched.
         return <LoadingScreen message="正在讀取使用者資料..." />;
     }
 
@@ -192,7 +189,6 @@ function LoginScreen({ auth }) {
         const provider = new GoogleAuthProvider();
         try {
             await signInWithPopup(auth, provider);
-            // After successful sign-in, the onAuthStateChanged listener in App.js will handle the rest.
         } catch (error) {
             console.error("Google 登入失敗:", error);
             alert("登入時發生錯誤，請查看控制台以獲取更多資訊。");
@@ -230,16 +226,12 @@ function PendingApprovalScreen() {
 function MainApp({ user, userData, auth, db, appId }) {
     const [activeTab, setActiveTab] = useState('announcements');
 
-    const handleLogout = async () => {
-        await signOut(auth);
-    };
-
     const renderContent = () => {
         switch (activeTab) {
             case 'announcements':
                 return <Announcements db={db} user={user} appId={appId} />;
             case 'calendar':
-                return <Calendar />;
+                return <Calendar db={db} user={user} appId={appId} />;
             case 'chat':
                 return <Chat />;
             case 'profile':
@@ -261,7 +253,7 @@ function MainApp({ user, userData, auth, db, appId }) {
                     <div className="flex items-center space-x-3 pl-4 border-l border-gray-200">
                         <img src={userData.photoURL || `https://placehold.co/40x40/5F828B/FFFFFF?text=${userData.displayName[0]}`} alt="avatar" className="w-10 h-10 rounded-full" />
                         <span className="text-gray-700 font-medium">{userData.displayName}</span>
-                        <button onClick={handleLogout} className="text-gray-500 hover:text-[#5F828B] transition-colors">
+                        <button onClick={() => signOut(auth)} className="text-gray-500 hover:text-[#5F828B] transition-colors">
                             <Icon name="log-out" />
                         </button>
                     </div>
@@ -410,14 +402,207 @@ function Announcements({ db, user, appId }) {
     );
 }
 
-function Calendar() {
+function Calendar({ db, user, appId }) {
+    const [currentDate, setCurrentDate] = useState(new Date());
+    const [events, setEvents] = useState([]);
+    const [users, setUsers] = useState([]);
+    const [isModalOpen, setIsModalOpen] = useState(false);
+    const [selectedEvent, setSelectedEvent] = useState(null);
+    const [eventTitle, setEventTitle] = useState('');
+    const [eventStart, setEventStart] = useState('');
+    const [eventEnd, setEventEnd] = useState('');
+    const [eventParticipants, setEventParticipants] = useState([]);
+
+    useEffect(() => {
+        if (!db || !appId) return;
+
+        // Fetch users for participant selection
+        const fetchUsers = async () => {
+            const usersCollectionRef = collection(db, "artifacts", appId, "users");
+            const userSnapshot = await getDocs(usersCollectionRef);
+            const userList = userSnapshot.docs.map(doc => ({ uid: doc.id, ...doc.data() }));
+            setUsers(userList);
+        };
+        fetchUsers();
+
+        // Fetch events
+        const eventsCollectionRef = collection(db, "artifacts", appId, "public", "data", "events");
+        const q = query(eventsCollectionRef);
+        const unsubscribe = onSnapshot(q, (querySnapshot) => {
+            const eventsData = querySnapshot.docs.map(doc => ({
+                id: doc.id,
+                ...doc.data(),
+                start: doc.data().start.toDate(),
+                end: doc.data().end.toDate(),
+            }));
+            setEvents(eventsData);
+        });
+        return () => unsubscribe();
+    }, [db, appId]);
+
+    const handleOpenModal = (event = null, date = null) => {
+        if (event) {
+            setSelectedEvent(event);
+            setEventTitle(event.title);
+            setEventStart(event.start.toISOString().split('T')[0]);
+            setEventEnd(event.end.toISOString().split('T')[0]);
+            setEventParticipants(event.participants.map(p => p.uid));
+        } else {
+            setSelectedEvent(null);
+            setEventTitle('');
+            const initialDate = date ? new Date(date) : new Date();
+            initialDate.setHours(0,0,0,0);
+            setEventStart(initialDate.toISOString().split('T')[0]);
+            setEventEnd(initialDate.toISOString().split('T')[0]);
+            setEventParticipants([]);
+        }
+        setIsModalOpen(true);
+    };
+
+    const handleCloseModal = () => setIsModalOpen(false);
+
+    const handleParticipantChange = (uid) => {
+        setEventParticipants(prev => 
+            prev.includes(uid) ? prev.filter(id => id !== uid) : [...prev, uid]
+        );
+    };
+
+    const handleSubmit = async (e) => {
+        e.preventDefault();
+        if (!eventTitle) {
+            alert("請輸入活動標題");
+            return;
+        }
+        
+        const start = new Date(eventStart);
+        const end = new Date(eventEnd);
+        end.setHours(23, 59, 59, 999); // Set end to the end of the day
+
+        const participantsData = users.filter(u => eventParticipants.includes(u.uid)).map(u => ({ uid: u.uid, displayName: u.displayName }));
+
+        const eventData = {
+            title: eventTitle,
+            start: Timestamp.fromDate(start),
+            end: Timestamp.fromDate(end),
+            participants: participantsData,
+            authorId: user.uid,
+            authorName: user.displayName
+        };
+
+        if (selectedEvent) {
+            const eventRef = doc(db, "artifacts", appId, "public", "data", "events", selectedEvent.id);
+            await updateDoc(eventRef, eventData);
+        } else {
+            await addDoc(collection(db, "artifacts", appId, "public", "data", "events"), eventData);
+        }
+        handleCloseModal();
+    };
+
+    const handleDelete = async () => {
+        if (selectedEvent && window.confirm("確定要刪除這個活動嗎？")) {
+            const eventRef = doc(db, "artifacts", appId, "public", "data", "events", selectedEvent.id);
+            await deleteDoc(eventRef);
+            handleCloseModal();
+        }
+    };
+
+    const monthNames = ["一月", "二月", "三月", "四月", "五月", "六月", "七月", "八月", "九月", "十月", "十一月", "十二月"];
+    const days = ['日', '一', '二', '三', '四', '五', '六'];
+
+    const startOfMonth = new Date(currentDate.getFullYear(), currentDate.getMonth(), 1);
+    const endOfMonth = new Date(currentDate.getFullYear(), currentDate.getMonth() + 1, 0);
+    const startDate = new Date(startOfMonth);
+    startDate.setDate(startDate.getDate() - startOfMonth.getDay());
+    const endDate = new Date(endOfMonth);
+    endDate.setDate(endDate.getDate() + (6 - endOfMonth.getDay()));
+
+    const calendarDays = [];
+    let day = new Date(startDate);
+    while (day <= endDate) {
+        calendarDays.push(new Date(day));
+        day.setDate(day.getDate() + 1);
+    }
+    
+    const changeMonth = (offset) => {
+        setCurrentDate(new Date(currentDate.getFullYear(), currentDate.getMonth() + offset, 1));
+    };
+
     return (
-        <div className="bg-white p-6 rounded-lg shadow-sm border border-gray-200 h-full">
-            <h2 className="text-3xl font-bold text-gray-800 mb-4">行事曆</h2>
-            <p className="text-gray-600">此功能正在開發中。您將能夠在這裡建立、編輯和刪除行程，並邀請成員參加。</p>
-            <div className="mt-6 p-8 border-2 border-dashed border-gray-300 rounded-lg text-center text-gray-500">
-                行事曆視圖將會顯示在這裡
+        <div className="bg-white p-6 rounded-lg shadow-sm border border-gray-200">
+            <div className="flex justify-between items-center mb-6">
+                <div className="flex items-center gap-4">
+                    <button onClick={() => changeMonth(-1)} className="p-2 rounded-full hover:bg-gray-100"><Icon name="chevron-left" /></button>
+                    <h2 className="text-2xl font-bold text-gray-800">{currentDate.getFullYear()} 年 {monthNames[currentDate.getMonth()]}</h2>
+                    <button onClick={() => changeMonth(1)} className="p-2 rounded-full hover:bg-gray-100"><Icon name="chevron-right" /></button>
+                </div>
+                <button onClick={() => handleOpenModal()} className="flex items-center gap-2 bg-[#5F828B] text-white px-4 py-2 rounded-lg shadow hover:bg-[#4A666F] transition-colors">
+                    <Icon name="plus" />
+                    <span>新增行程</span>
+                </button>
             </div>
+            
+            <div className="grid grid-cols-7 gap-px bg-gray-200 border-t border-l border-gray-200">
+                {days.map(d => <div key={d} className="text-center font-medium text-gray-600 py-2 bg-gray-50">{d}</div>)}
+                {calendarDays.map((d, i) => {
+                    const isToday = new Date().toDateString() === d.toDateString();
+                    const isCurrentMonth = d.getMonth() === currentDate.getMonth();
+                    const dayEvents = events.filter(e => d >= new Date(e.start.setHours(0,0,0,0)) && d <= e.end);
+
+                    return (
+                        <div key={i} className={`relative min-h-[120px] bg-white p-2 border-b border-r border-gray-200 ${!isCurrentMonth ? 'bg-gray-50 text-gray-400' : ''}`} onClick={() => handleOpenModal(null, d)}>
+                            <div className={`absolute top-2 right-2 w-7 h-7 flex items-center justify-center rounded-full ${isToday ? 'bg-[#5F828B] text-white' : ''}`}>{d.getDate()}</div>
+                            <div className="mt-8 space-y-1">
+                                {dayEvents.map(e => (
+                                    <div key={e.id} onClick={(ev) => { ev.stopPropagation(); handleOpenModal(e); }} className="bg-[#A2C4C9] text-white text-sm p-1 rounded-md truncate cursor-pointer hover:bg-[#5F828B]">
+                                        {e.title}
+                                    </div>
+                                ))}
+                            </div>
+                        </div>
+                    );
+                })}
+            </div>
+
+            <Modal isOpen={isModalOpen} onClose={handleCloseModal} title={selectedEvent ? "編輯行程" : "新增行程"}>
+                <form onSubmit={handleSubmit}>
+                    <div className="mb-4">
+                        <label className="block text-gray-700 text-sm font-bold mb-2" htmlFor="event-title">標題</label>
+                        <input id="event-title" type="text" value={eventTitle} onChange={e => setEventTitle(e.target.value)} className="shadow appearance-none border rounded w-full py-2 px-3 text-gray-700" />
+                    </div>
+                    <div className="grid grid-cols-2 gap-4 mb-4">
+                        <div>
+                            <label className="block text-gray-700 text-sm font-bold mb-2" htmlFor="event-start">開始日期</label>
+                            <input id="event-start" type="date" value={eventStart} onChange={e => setEventStart(e.target.value)} className="shadow appearance-none border rounded w-full py-2 px-3 text-gray-700" />
+                        </div>
+                        <div>
+                            <label className="block text-gray-700 text-sm font-bold mb-2" htmlFor="event-end">結束日期</label>
+                            <input id="event-end" type="date" value={eventEnd} onChange={e => setEventEnd(e.target.value)} className="shadow appearance-none border rounded w-full py-2 px-3 text-gray-700" />
+                        </div>
+                    </div>
+                    <div className="mb-6">
+                        <label className="block text-gray-700 text-sm font-bold mb-2">參與成員</label>
+                        <div className="grid grid-cols-3 gap-2">
+                            {users.map(u => (
+                                <label key={u.uid} className="flex items-center gap-2 p-2 border rounded-md">
+                                    <input type="checkbox" checked={eventParticipants.includes(u.uid)} onChange={() => handleParticipantChange(u.uid)} />
+                                    <span>{u.displayName}</span>
+                                </label>
+                            ))}
+                        </div>
+                    </div>
+                    <div className="flex justify-between items-center">
+                        <div>
+                            {selectedEvent && user.uid === selectedEvent.authorId && (
+                                <button type="button" onClick={handleDelete} className="bg-red-500 text-white px-4 py-2 rounded-lg hover:bg-red-600">刪除</button>
+                            )}
+                        </div>
+                        <div className="flex gap-3">
+                            <button type="button" onClick={handleCloseModal} className="bg-gray-200 text-gray-800 px-4 py-2 rounded-lg hover:bg-gray-300">取消</button>
+                            <button type="submit" className="bg-[#5F828B] text-white px-4 py-2 rounded-lg hover:bg-[#4A666F]">儲存</button>
+                        </div>
+                    </div>
+                </form>
+            </Modal>
         </div>
     );
 }
@@ -445,8 +630,6 @@ function Chat() {
 
 function Profile({ user, userData, auth, db, appId }) {
     // --- Cloudinary Settings ---
-    // !! 非常重要 !!
-    // TODO: 請將下方兩個值換成您在 Cloudinary 儀表板上找到的真實值
     const CLOUDINARY_CLOUD_NAME = "duagjowes";
     const CLOUDINARY_UPLOAD_PRESET = "yakult-preset";
     
@@ -476,7 +659,6 @@ function Profile({ user, userData, auth, db, appId }) {
         setIsUploading(true);
         let newPhotoURL = userData.photoURL;
 
-        // If a new photo was selected, upload it to Cloudinary
         if (photo) {
             const formData = new FormData();
             formData.append('file', photo);
@@ -504,7 +686,6 @@ function Profile({ user, userData, auth, db, appId }) {
             }
         }
 
-        // Update Firebase Auth profile and Firestore document
         try {
             await updateProfile(auth.currentUser, {
                 displayName,
@@ -532,7 +713,6 @@ function Profile({ user, userData, auth, db, appId }) {
         <div>
             <h2 className="text-3xl font-bold text-gray-800 mb-6">成員專區</h2>
             <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
-                {/* Profile Info */}
                 <div className="md:col-span-2 bg-white p-8 rounded-lg shadow-sm border border-gray-200">
                     <h3 className="text-xl font-semibold text-[#4A666F] mb-6">個人資訊</h3>
                     <div className="flex items-center space-x-6 mb-8">
@@ -569,8 +749,6 @@ function Profile({ user, userData, auth, db, appId }) {
                         </button>
                     </div>
                 </div>
-
-                {/* Security Settings */}
                 <div className="bg-white p-8 rounded-lg shadow-sm border border-gray-200">
                     <h3 className="text-xl font-semibold text-[#4A666F] mb-6">安全性設定</h3>
                     <div className="space-y-6">
