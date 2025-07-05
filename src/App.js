@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+// 【修正處】: 在下面的 import 清單中，加入了 updateDoc 和 arrayUnion
 import { onAuthStateChanged, signOut } from 'firebase/auth';
 import { doc, getDoc, setDoc, updateDoc, arrayUnion, serverTimestamp } from 'firebase/firestore';
 
@@ -44,7 +45,6 @@ function App() {
                 }
                 setUser(currentUser);
 
-                // --- 【全新的邏輯在這裡】 ---
                 // 2. 確保「公開聊天室」存在，並將目前使用者加入
                 const generalChatRef = doc(db, "artifacts", appId, "public", "data", "chatRooms", "general");
                 const generalChatSnap = await getDoc(generalChatRef);
@@ -65,7 +65,6 @@ function App() {
                         lastMessageTimestamp: serverTimestamp()
                     });
                 }
-                // --- 【全新邏輯結束】 ---
 
             } else {
                 setUser(null);
@@ -96,7 +95,7 @@ function App() {
     return <MainApp user={user} userData={userData} appId={appId} />;
 }
 
-// --- 主要 App 介面框架 (保持不變) ---
+// --- 主要 App 介面框架 ---
 function MainApp({ user, userData, appId }) {
     const [activeTab, setActiveTab] = useState('announcements');
 
@@ -140,6 +139,7 @@ function MainApp({ user, userData, appId }) {
     );
 }
 
+// --- 導覽列按鈕 ---
 const NavItem = ({ icon, label, active, onClick }) => (
     <button onClick={onClick} className={`flex items-center space-x-2 px-3 py-2 rounded-md transition-colors ${active ? 'bg-[#5F828B] text-white' : 'text-gray-600 hover:bg-gray-100'}`}>
         <Icon name={icon} className="w-5 h-5" />
