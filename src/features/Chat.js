@@ -3,13 +3,12 @@ import { db } from '../firebase/config';
 import { collection, query, onSnapshot, addDoc, doc, getDoc, setDoc, where, orderBy, serverTimestamp, updateDoc } from 'firebase/firestore';
 import Icon from '../components/Icon';
 
-// 【新增功能】: 這是一個小工具，用來美化時間顯示
+// 這是一個小工具，用來美化時間顯示
 function formatLastMessageTime(timestamp) {
     if (!timestamp) return '';
     const date = timestamp.toDate();
     const now = new Date();
     
-    // 如果是今天，只顯示時間
     if (date.toDateString() === now.toDateString()) {
         return date.toLocaleTimeString('zh-TW', {
             hour: 'numeric',
@@ -18,7 +17,6 @@ function formatLastMessageTime(timestamp) {
         });
     }
     
-    // 如果是昨天或更早，顯示日期
     return date.toLocaleDateString('zh-TW', {
         month: 'numeric',
         day: 'numeric'
@@ -34,7 +32,6 @@ function Chat({ user, appId }) {
     const [newMessage, setNewMessage] = useState('');
     const messagesEndRef = useRef(null);
 
-    // Fetch all users for the chat list
     useEffect(() => {
         if (!db || !appId) return;
         const usersCollectionRef = collection(db, "artifacts", appId, "users");
@@ -45,28 +42,24 @@ function Chat({ user, appId }) {
         return unsubscribe;
     }, [db, appId]);
 
-    // Fetch chat rooms the current user is part of
     useEffect(() => {
         if (!db || !user) return;
         const chatRoomsRef = collection(db, "artifacts", appId, "public", "data", "chatRooms");
-        
-        // 【修改功能】: 增加 orderBy，讓列表按照最後訊息時間排序
         const q = query(chatRoomsRef, where("members", "array-contains", user.uid), orderBy("lastMessageTimestamp", "desc"));
         
         const unsubscribe = onSnapshot(q, (snapshot) => {
             const rooms = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
             
-            // 這段確保「公開聊天室」存在的邏輯保持不變
             const generalChatRef = doc(db, "artifacts", appId, "public", "data", "chatRooms", "general");
             getDoc(generalChatRef).then(docSnap => {
-                if (!docSnap.exists() && users.length > 0) { // 確保有使用者資料後再建立
+                if (!docSnap.exists() && users.length > 0) {
                      setDoc(generalChatRef, {
                         name: "公開聊天室",
                         type: "group",
                         members: users.map(u => u.id),
                         createdAt: serverTimestamp(),
-                        lastMessage: '歡迎來到聊天室！', // 【新增功能】
-                        lastMessageTimestamp: serverTimestamp() // 【新增功能】
+                        lastMessage: '歡迎來到聊天室！',
+                        lastMessageTimestamp: serverTimestamp()
                     });
                 }
             })
@@ -74,18 +67,16 @@ function Chat({ user, appId }) {
             setChatRooms(rooms);
 
             if (!activeChat && rooms.length > 0) {
-                // 自動選擇第一個 (最新的) 聊天室
                 setActiveChat(rooms[0]); 
             }
         });
 
         return unsubscribe;
-    }, [db, user, appId, users]); // 依賴 users，確保它已載入
+    }, [db, user, appId, users]);
 
-    // Fetch messages for the active chat room
     useEffect(() => {
         if (!db || !activeChat) {
-            setMessages([]); // 清空訊息
+            setMessages([]);
             return;
         };
         const messagesRef = collection(db, "artifacts", appId, "public", "data", "chatRooms", activeChat.id, "messages");
@@ -107,9 +98,8 @@ function Chat({ user, appId }) {
         if (newMessage.trim() === '' || !activeChat) return;
 
         const currentMessage = newMessage;
-        setNewMessage(''); // 先清空輸入框，讓體驗更好
+        setNewMessage(''); 
 
-        // 1. 新增訊息到聊天室的 "messages" 子集合
         const messagesRef = collection(db, "artifacts", appId, "public", "data", "chatRooms", activeChat.id, "messages");
         await addDoc(messagesRef, {
             text: currentMessage,
@@ -119,7 +109,6 @@ function Chat({ user, appId }) {
             timestamp: serverTimestamp()
         });
 
-        // 【新增功能】: 2. 同時更新聊天室本身的「最後訊息」欄位
         const chatRoomRef = doc(db, "artifacts", appId, "public", "data", "chatRooms", activeChat.id);
         await updateDoc(chatRoomRef, {
             lastMessage: currentMessage,
@@ -141,8 +130,8 @@ function Chat({ user, appId }) {
                 memberNames: {[user.uid]: user.displayName, [targetUser.id]: targetUser.displayName},
                 memberPhotos: {[user.uid]: user.photoURL || '', [targetUser.id]: targetUser.photoURL || ''},
                 createdAt: serverTimestamp(),
-                lastMessage: '', // 【新增功能】: 建立新聊天室時，也要有這個欄位
-                lastMessageTimestamp: serverTimestamp() // 【新增功能】
+                lastMessage: '',
+                lastMessageTimestamp: serverTimestamp()
             });
         }
         
@@ -176,3 +165,75 @@ function Chat({ user, appId }) {
             <div className="w-1/3 border-r border-gray-200 flex flex-col">
                 <div className="p-4 border-b">
                     <h2 className="text-xl font-bold text-gray-800">聊天室</h2>
+                </div>
+                <div className="flex-grow overflow-y-auto">
+                     <ul>
+                        {chatRooms.map(room => (
+                            <li key={room.id} onClick={() => setActiveChat(room)} className={`flex items-center gap-3 p-3 cursor-pointer hover:bg-gray-100 border-b border-gray-100 ${activeChat?.id === room.id ? 'bg-gray-200' : ''}`}>
+                                <img src={getChatPhoto(room)} alt="chat avatar" className="w-12 h-12 rounded-full flex-shrink-0" />
+                                <div className="flex-grow overflow-hidden">
+                                    <div className="flex justify-between items-center">
+                                        <p className="font-semibold text-gray-800 truncate">{getChatName(room)}</p>
+                                        <p className="text-xs text-gray-500 flex-shrink-0">{formatLastMessageTime(room.lastMessageTimestamp)}</p>
+                                    </div>
+                                    <p className="text-sm text-gray-600 truncate">{room.lastMessage}</p>
+                                </div>
+                            </li>
+                        ))}
+                    </ul>
+                </div>
+            </div>
+
+            {/* Main Chat Area */}
+            <div className="w-2/3 flex flex-col">
+                {activeChat ? (
+                    <>
+                        <div className="p-4 border-b flex items-center gap-4">
+                            <img src={getChatPhoto(activeChat)} alt="chat avatar" className="w-10 h-10 rounded-full" />
+                            <h3 className="font-bold text-lg">{getChatName(activeChat)}</h3>
+                        </div>
+                        <div className="flex-grow p-6 overflow-y-auto bg-gray-50">
+                            <div className="space-y-4">
+                                {messages.map(msg => (
+                                    <div key={msg.id} className={`flex items-end gap-3 ${msg.senderId === user.uid ? 'justify-end' : 'justify-start'}`}>
+                                        {msg.senderId !== user.uid && (
+                                            <img src={msg.senderPhotoURL || `https://placehold.co/40x40/5F828B/FFFFFF?text=${msg.senderName ? msg.senderName[0] : '?'}`} alt="sender" className="w-8 h-8 rounded-full" />
+                                        )}
+                                        <div className={`max-w-xs lg:max-w-md px-4 py-2 rounded-xl ${msg.senderId === user.uid ? 'bg-[#5F828B] text-white' : 'bg-white shadow-sm'}`}>
+                                            <p className="text-sm">{msg.text}</p>
+                                            <p className={`text-xs mt-1 text-right ${msg.senderId === user.uid ? 'text-gray-300' : 'text-gray-500'}`}>{msg.timestamp ? new Date(msg.timestamp.seconds * 1000).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'}) : ''}</p>
+                                        </div>
+                                         {msg.senderId === user.uid && (
+                                            <img src={user.photoURL || `https://placehold.co/40x40/5F828B/FFFFFF?text=${user.displayName[0]}`} alt="sender" className="w-8 h-8 rounded-full" />
+                                        )}
+                                    </div>
+                                ))}
+                            </div>
+                            <div ref={messagesEndRef} />
+                        </div>
+                        <div className="p-4 bg-white border-t">
+                            <form onSubmit={handleSendMessage} className="flex items-center gap-3">
+                                <input 
+                                    type="text" 
+                                    value={newMessage}
+                                    onChange={(e) => setNewMessage(e.target.value)}
+                                    placeholder="輸入訊息..." 
+                                    className="flex-grow border rounded-lg p-2 focus:outline-none focus:ring-2 focus:ring-[#5F828B]"
+                                />
+                                <button type="submit" className="bg-[#5F828B] text-white p-2 rounded-lg hover:bg-[#4A666F] disabled:bg-gray-300" disabled={!newMessage.trim()}>
+                                    <Icon name="send" />
+                                </button>
+                            </form>
+                        </div>
+                    </>
+                ) : (
+                    <div className="flex items-center justify-center h-full text-gray-500">
+                        選擇或建立一個聊天室開始對話
+                    </div>
+                )}
+            </div>
+        </div>
+    );
+}
+
+export default Chat;
