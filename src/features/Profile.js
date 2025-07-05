@@ -6,8 +6,8 @@ import Icon from '../components/Icon';
 
 function Profile({ user, userData, appId }) {
     // --- Cloudinary Settings ---
-    const CLOUDINARY_CLOUD_NAME = "duagjowes";
-    const CLOUDINARY_UPLOAD_PRESET = "yakult-preset";
+    const CLOUDINARY_CLOUD_NAME = process.env.REACT_APP_CLOUDINARY_CLOUD_NAME;
+const CLOUDINARY_UPLOAD_PRESET = process.env.REACT_APP_CLOUDINARY_UPLOAD_PRESET;
     
     const [displayName, setDisplayName] = useState(userData.displayName);
     const [personalInfo, setPersonalInfo] = useState(userData.personalInfo);
