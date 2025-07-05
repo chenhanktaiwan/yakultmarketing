@@ -1,5 +1,4 @@
 import React, { useState, useEffect, useRef } from 'react';
-// Firebase app is initialized in this file, no longer imported from a separate file.
 import { initializeApp } from 'firebase/app';
 import { 
     getAuth, 
@@ -24,11 +23,11 @@ import {
     Timestamp,
     getDocs,
     where,
-    orderBy
+    orderBy,
+    arrayUnion
 } from 'firebase/firestore';
 
 // --- Firebase Configuration ---
-// This configuration is now complete with your provided values.
 const firebaseConfig = {
   apiKey: "AIzaSyA2tq_5whGRqB-6lqneEsdUEJ8DSD_-hII",
   authDomain: "yakulttwmarketing.firebaseapp.com",
@@ -44,7 +43,7 @@ let firebaseApp;
 try {
     firebaseApp = initializeApp(firebaseConfig);
 } catch (e) {
-    console.error("Firebase aponitialization error before component mount:", e);
+    console.error("Firebase initialization error before component mount:", e);
 }
 
 
@@ -65,6 +64,8 @@ const Icon = ({ name, className }) => {
         'shield-check': <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10"/><path d="m9 12 2 2 4-4"/></svg>,
         'chevron-left': <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="m15 18-6-6 6-6"/></svg>,
         'chevron-right': <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="m9 18 6-6-6-6"/></svg>,
+        'paperclip': <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="m21.44 11.05-9.19 9.19a6 6 0 0 1-8.49-8.49l8.57-8.57A4 4 0 1 1 18 8.84l-8.59 8.59a2 2 0 0 1-2.83-2.83l8.49-8.48"/></svg>,
+        'file-text': <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M15 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7Z"/><path d="M14 2v4a2 2 0 0 0 2 2h4"/><path d="M10 9H8"/><path d="M16 13H8"/><path d="M16 17H8"/></svg>,
     };
     return <span className={className}>{icons[name]}</span>;
 };
