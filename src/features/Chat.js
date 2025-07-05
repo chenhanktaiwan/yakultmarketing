@@ -3,6 +3,7 @@ import { db } from '../firebase/config';
 import { collection, query, onSnapshot, addDoc, doc, getDoc, setDoc, where, orderBy, serverTimestamp, updateDoc } from 'firebase/firestore';
 import Icon from '../components/Icon';
 
+// 時間格式化工具 (保持不變)
 function formatLastMessageTime(timestamp) {
     if (!timestamp) return '';
     const date = timestamp.toDate();
@@ -30,7 +31,21 @@ function Chat({ user, appId }) {
     const [newMessage, setNewMessage] = useState('');
     const messagesEndRef = useRef(null);
 
-    // Fetch chat rooms the current user is part of
+    // 【新增功能】: 用來控制側邊欄要顯示「聊天列表」還是「新增聊天成員列表」
+    const [sidebarView, setSidebarView] = useState('list'); // 'list' 或 'newUser'
+
+    // 取得所有使用者資料 (為了「新增聊天」列表)
+    useEffect(() => {
+        if (!db || !appId) return;
+        const usersCollectionRef = collection(db, "artifacts", appId, "users");
+        const unsubscribe = onSnapshot(usersCollectionRef, (snapshot) => {
+            const userList = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+            setUsers(userList);
+        });
+        return unsubscribe;
+    }, [db, appId]);
+
+    // 取得使用者參與的聊天室 (保持不變)
     useEffect(() => {
         if (!db || !user) return;
         const chatRoomsRef = collection(db, "artifacts", appId, "public", "data", "chatRooms");
@@ -40,17 +55,15 @@ function Chat({ user, appId }) {
             const rooms = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
             setChatRooms(rooms);
 
-            // 【邏輯簡化】: 不再需要在這裡檢查並建立公開聊天室
-            // 如果目前沒有選中的聊天室，就自動選第一個 (最新的)
             if (!activeChat && rooms.length > 0) {
                 setActiveChat(rooms[0]); 
             }
         });
 
         return unsubscribe;
-    }, [db, user, appId]); // 【邏輯簡化】: 拿掉了對 users 的依賴
+    }, [db, user, appId]);
 
-    // Fetch messages for the active chat room
+    // 取得訊息 (保持不變)
     useEffect(() => {
         if (!db || !activeChat) {
             setMessages([]);
@@ -70,13 +83,12 @@ function Chat({ user, appId }) {
         messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
     }, [messages]);
 
+    // 傳送訊息 (保持不變)
     const handleSendMessage = async (e) => {
         e.preventDefault();
         if (newMessage.trim() === '' || !activeChat) return;
-
         const currentMessage = newMessage;
         setNewMessage(''); 
-
         const messagesRef = collection(db, "artifacts", appId, "public", "data", "chatRooms", activeChat.id, "messages");
         await addDoc(messagesRef, {
             text: currentMessage,
@@ -85,7 +97,6 @@ function Chat({ user, appId }) {
             senderPhotoURL: user.photoURL,
             timestamp: serverTimestamp()
         });
-
         const chatRoomRef = doc(db, "artifacts", appId, "public", "data", "chatRooms", activeChat.id);
         await updateDoc(chatRoomRef, {
             lastMessage: currentMessage,
@@ -93,7 +104,7 @@ function Chat({ user, appId }) {
         });
     };
     
-    // 這段函式目前沒用到，但先留著未來可能有用
+    // 【修改功能】: 開始 1 對 1 聊天後，要切回列表視圖
     const startDirectChat = async (targetUser) => {
         if (targetUser.id === user.uid) return;
         const chatRoomId = [user.uid, targetUser.id].sort().join('_');
@@ -106,28 +117,25 @@ function Chat({ user, appId }) {
                 memberNames: {[user.uid]: user.displayName, [targetUser.id]: targetUser.displayName},
                 memberPhotos: {[user.uid]: user.photoURL || '', [targetUser.id]: targetUser.photoURL || ''},
                 createdAt: serverTimestamp(),
-                lastMessage: '',
+                lastMessage: '聊天室已建立',
                 lastMessageTimestamp: serverTimestamp()
             });
         }
         const newActiveChat = (await getDoc(chatRoomRef)).data();
         setActiveChat({id: chatRoomId, ...newActiveChat});
+        setSidebarView('list'); // 切回聊天列表
     };
 
+    // 輔助函式 (保持不變)
     const getChatName = (room) => {
         if (!room) return '';
-        if (room.type === 'group') {
-            return room.name;
-        }
+        if (room.type === 'group') return room.name;
         const otherUserId = room.members.find(id => id !== user.uid);
         return room.memberNames?.[otherUserId] || '私人訊息';
     };
-    
     const getChatPhoto = (room) => {
         if (!room) return '';
-        if (room.type === 'group') {
-            return `https://placehold.co/40x40/A2C4C9/FFFFFF?text=${room.name ? room.name[0] : 'G'}`;
-        }
+        if (room.type === 'group') return `https://placehold.co/40x40/A2C4C9/FFFFFF?text=${room.name ? room.name[0] : 'G'}`;
         const otherUserId = room.members.find(id => id !== user.uid);
         const photo = room.memberPhotos?.[otherUserId];
         const name = room.memberNames?.[otherUserId];
@@ -136,27 +144,57 @@ function Chat({ user, appId }) {
 
     return (
         <div className="bg-white rounded-lg shadow-sm border border-gray-200 h-[80vh] flex">
+            {/* Sidebar */}
             <div className="w-1/3 border-r border-gray-200 flex flex-col">
-                <div className="p-4 border-b">
-                    <h2 className="text-xl font-bold text-gray-800">聊天室</h2>
-                </div>
-                <div className="flex-grow overflow-y-auto">
-                     <ul>
-                        {chatRooms.map(room => (
-                            <li key={room.id} onClick={() => setActiveChat(room)} className={`flex items-center gap-3 p-3 cursor-pointer hover:bg-gray-100 border-b border-gray-100 ${activeChat?.id === room.id ? 'bg-gray-200' : ''}`}>
-                                <img src={getChatPhoto(room)} alt="chat avatar" className="w-12 h-12 rounded-full flex-shrink-0" />
-                                <div className="flex-grow overflow-hidden">
-                                    <div className="flex justify-between items-center">
-                                        <p className="font-semibold text-gray-800 truncate">{getChatName(room)}</p>
-                                        <p className="text-xs text-gray-500 flex-shrink-0">{formatLastMessageTime(room.lastMessageTimestamp)}</p>
-                                    </div>
-                                    <p className="text-sm text-gray-600 truncate">{room.lastMessage}</p>
-                                </div>
-                            </li>
-                        ))}
-                    </ul>
-                </div>
+                {/* 【修改功能】: 根據 sidebarView 顯示不同內容 */}
+                {sidebarView === 'list' ? (
+                    <>
+                        <div className="p-4 border-b flex justify-between items-center">
+                            <h2 className="text-xl font-bold text-gray-800">聊天室</h2>
+                            <button onClick={() => setSidebarView('newUser')} className="text-gray-500 hover:text-[#5F828B]" title="新增聊天">
+                                <Icon name="plus" className="w-6 h-6" />
+                            </button>
+                        </div>
+                        <div className="flex-grow overflow-y-auto">
+                            <ul>
+                                {chatRooms.map(room => (
+                                    <li key={room.id} onClick={() => setActiveChat(room)} className={`flex items-center gap-3 p-3 cursor-pointer hover:bg-gray-100 border-b border-gray-100 ${activeChat?.id === room.id ? 'bg-gray-200' : ''}`}>
+                                        <img src={getChatPhoto(room)} alt="chat avatar" className="w-12 h-12 rounded-full flex-shrink-0" />
+                                        <div className="flex-grow overflow-hidden">
+                                            <div className="flex justify-between items-center">
+                                                <p className="font-semibold text-gray-800 truncate">{getChatName(room)}</p>
+                                                <p className="text-xs text-gray-500 flex-shrink-0">{formatLastMessageTime(room.lastMessageTimestamp)}</p>
+                                            </div>
+                                            <p className="text-sm text-gray-600 truncate">{room.lastMessage}</p>
+                                        </div>
+                                    </li>
+                                ))}
+                            </ul>
+                        </div>
+                    </>
+                ) : (
+                    <>
+                        <div className="p-4 border-b flex justify-between items-center">
+                            <h2 className="text-xl font-bold text-gray-800">選擇成員</h2>
+                            <button onClick={() => setSidebarView('list')} className="text-gray-500 hover:text-[#5F828B]" title="返回">
+                                <Icon name="chevron-left" className="w-6 h-6" />
+                            </button>
+                        </div>
+                        <div className="flex-grow overflow-y-auto">
+                            <ul>
+                                {users.filter(u => u.id !== user.uid).map(u => (
+                                    <li key={u.id} onClick={() => startDirectChat(u)} className="flex items-center gap-3 p-3 cursor-pointer hover:bg-gray-100 border-b border-gray-100">
+                                        <img src={u.photoURL || `https://placehold.co/40x40/5F828B/FFFFFF?text=${u.displayName[0]}`} alt="user avatar" className="w-10 h-10 rounded-full" />
+                                        <span className="font-medium">{u.displayName}</span>
+                                    </li>
+                                ))}
+                            </ul>
+                        </div>
+                    </>
+                )}
             </div>
+
+            {/* Main Chat Area (保持不變) */}
             <div className="w-2/3 flex flex-col">
                 {activeChat ? (
                     <>
@@ -168,16 +206,12 @@ function Chat({ user, appId }) {
                             <div className="space-y-4">
                                 {messages.map(msg => (
                                     <div key={msg.id} className={`flex items-end gap-3 ${msg.senderId === user.uid ? 'justify-end' : 'justify-start'}`}>
-                                        {msg.senderId !== user.uid && (
-                                            <img src={msg.senderPhotoURL || `https://placehold.co/40x40/5F828B/FFFFFF?text=${msg.senderName ? msg.senderName[0] : '?'}`} alt="sender" className="w-8 h-8 rounded-full" />
-                                        )}
+                                        {msg.senderId !== user.uid && ( <img src={msg.senderPhotoURL || `https://placehold.co/40x40/5F828B/FFFFFF?text=${msg.senderName ? msg.senderName[0] : '?'}`} alt="sender" className="w-8 h-8 rounded-full" /> )}
                                         <div className={`max-w-xs lg:max-w-md px-4 py-2 rounded-xl ${msg.senderId === user.uid ? 'bg-[#5F828B] text-white' : 'bg-white shadow-sm'}`}>
                                             <p className="text-sm">{msg.text}</p>
                                             <p className={`text-xs mt-1 text-right ${msg.senderId === user.uid ? 'text-gray-300' : 'text-gray-500'}`}>{msg.timestamp ? new Date(msg.timestamp.seconds * 1000).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'}) : ''}</p>
                                         </div>
-                                         {msg.senderId === user.uid && (
-                                            <img src={user.photoURL || `https://placehold.co/40x40/5F828B/FFFFFF?text=${user.displayName[0]}`} alt="sender" className="w-8 h-8 rounded-full" />
-                                        )}
+                                         {msg.senderId === user.uid && ( <img src={user.photoURL || `https://placehold.co/40x40/5F828B/FFFFFF?text=${user.displayName[0]}`} alt="sender" className="w-8 h-8 rounded-full" /> )}
                                     </div>
                                 ))}
                             </div>
@@ -185,13 +219,7 @@ function Chat({ user, appId }) {
                         </div>
                         <div className="p-4 bg-white border-t">
                             <form onSubmit={handleSendMessage} className="flex items-center gap-3">
-                                <input 
-                                    type="text" 
-                                    value={newMessage}
-                                    onChange={(e) => setNewMessage(e.target.value)}
-                                    placeholder="輸入訊息..." 
-                                    className="flex-grow border rounded-lg p-2 focus:outline-none focus:ring-2 focus:ring-[#5F828B]"
-                                />
+                                <input type="text" value={newMessage} onChange={(e) => setNewMessage(e.target.value)} placeholder="輸入訊息..." className="flex-grow border rounded-lg p-2 focus:outline-none focus:ring-2 focus:ring-[#5F828B]" />
                                 <button type="submit" className="bg-[#5F828B] text-white p-2 rounded-lg hover:bg-[#4A666F] disabled:bg-gray-300" disabled={!newMessage.trim()}>
                                     <Icon name="send" />
                                 </button>
