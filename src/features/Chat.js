@@ -3,7 +3,6 @@ import { db } from '../firebase/config';
 import { collection, query, onSnapshot, addDoc, doc, getDoc, setDoc, where, orderBy, serverTimestamp, updateDoc } from 'firebase/firestore';
 import Icon from '../components/Icon';
 
-// 這是一個小工具，用來美化時間顯示
 function formatLastMessageTime(timestamp) {
     if (!timestamp) return '';
     const date = timestamp.toDate();
@@ -23,7 +22,6 @@ function formatLastMessageTime(timestamp) {
     });
 }
 
-
 function Chat({ user, appId }) {
     const [users, setUsers] = useState([]);
     const [chatRooms, setChatRooms] = useState([]);
@@ -32,16 +30,7 @@ function Chat({ user, appId }) {
     const [newMessage, setNewMessage] = useState('');
     const messagesEndRef = useRef(null);
 
-    useEffect(() => {
-        if (!db || !appId) return;
-        const usersCollectionRef = collection(db, "artifacts", appId, "users");
-        const unsubscribe = onSnapshot(usersCollectionRef, (snapshot) => {
-            const userList = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
-            setUsers(userList);
-        });
-        return unsubscribe;
-    }, [db, appId]);
-
+    // Fetch chat rooms the current user is part of
     useEffect(() => {
         if (!db || !user) return;
         const chatRoomsRef = collection(db, "artifacts", appId, "public", "data", "chatRooms");
@@ -49,31 +38,19 @@ function Chat({ user, appId }) {
         
         const unsubscribe = onSnapshot(q, (snapshot) => {
             const rooms = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
-            
-            const generalChatRef = doc(db, "artifacts", appId, "public", "data", "chatRooms", "general");
-            getDoc(generalChatRef).then(docSnap => {
-                if (!docSnap.exists() && users.length > 0) {
-                     setDoc(generalChatRef, {
-                        name: "公開聊天室",
-                        type: "group",
-                        members: users.map(u => u.id),
-                        createdAt: serverTimestamp(),
-                        lastMessage: '歡迎來到聊天室！',
-                        lastMessageTimestamp: serverTimestamp()
-                    });
-                }
-            })
-
             setChatRooms(rooms);
 
+            // 【邏輯簡化】: 不再需要在這裡檢查並建立公開聊天室
+            // 如果目前沒有選中的聊天室，就自動選第一個 (最新的)
             if (!activeChat && rooms.length > 0) {
                 setActiveChat(rooms[0]); 
             }
         });
 
         return unsubscribe;
-    }, [db, user, appId, users]);
+    }, [db, user, appId]); // 【邏輯簡化】: 拿掉了對 users 的依賴
 
+    // Fetch messages for the active chat room
     useEffect(() => {
         if (!db || !activeChat) {
             setMessages([]);
@@ -116,12 +93,11 @@ function Chat({ user, appId }) {
         });
     };
     
+    // 這段函式目前沒用到，但先留著未來可能有用
     const startDirectChat = async (targetUser) => {
         if (targetUser.id === user.uid) return;
-        
         const chatRoomId = [user.uid, targetUser.id].sort().join('_');
         const chatRoomRef = doc(db, "artifacts", appId, "public", "data", "chatRooms", chatRoomId);
-        
         const docSnap = await getDoc(chatRoomRef);
         if (!docSnap.exists()) {
             await setDoc(chatRoomRef, {
@@ -134,7 +110,6 @@ function Chat({ user, appId }) {
                 lastMessageTimestamp: serverTimestamp()
             });
         }
-        
         const newActiveChat = (await getDoc(chatRoomRef)).data();
         setActiveChat({id: chatRoomId, ...newActiveChat});
     };
@@ -161,7 +136,6 @@ function Chat({ user, appId }) {
 
     return (
         <div className="bg-white rounded-lg shadow-sm border border-gray-200 h-[80vh] flex">
-            {/* Sidebar */}
             <div className="w-1/3 border-r border-gray-200 flex flex-col">
                 <div className="p-4 border-b">
                     <h2 className="text-xl font-bold text-gray-800">聊天室</h2>
@@ -183,8 +157,6 @@ function Chat({ user, appId }) {
                     </ul>
                 </div>
             </div>
-
-            {/* Main Chat Area */}
             <div className="w-2/3 flex flex-col">
                 {activeChat ? (
                     <>
