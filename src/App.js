@@ -403,15 +403,26 @@ function Announcements({ db, user, appId }) {
 }
 
 function Calendar({ db, user, appId }) {
+    // --- Cloudinary Settings ---
+    const CLOUDINARY_CLOUD_NAME = "duagjowes";
+    const CLOUDINARY_UPLOAD_PRESET = "yakult-preset";
+
     const [currentDate, setCurrentDate] = useState(new Date());
     const [events, setEvents] = useState([]);
     const [users, setUsers] = useState([]);
     const [isModalOpen, setIsModalOpen] = useState(false);
     const [selectedEvent, setSelectedEvent] = useState(null);
+    
+    // Form state
     const [eventTitle, setEventTitle] = useState('');
     const [eventStart, setEventStart] = useState('');
     const [eventEnd, setEventEnd] = useState('');
+    const [eventDescription, setEventDescription] = useState('');
+    const [eventLink, setEventLink] = useState('');
+    const [eventImageFile, setEventImageFile] = useState(null);
     const [eventParticipants, setEventParticipants] = useState([]);
+    const [isUploading, setIsUploading] = useState(false);
+
 
     useEffect(() => {
         if (!db || !appId) return;
@@ -446,6 +457,8 @@ function Calendar({ db, user, appId }) {
             setEventTitle(event.title);
             setEventStart(event.start.toISOString().split('T')[0]);
             setEventEnd(event.end.toISOString().split('T')[0]);
+            setEventDescription(event.description || '');
+            setEventLink(event.link || '');
             setEventParticipants(event.participants.map(p => p.uid));
         } else {
             setSelectedEvent(null);
@@ -454,8 +467,11 @@ function Calendar({ db, user, appId }) {
             initialDate.setHours(0,0,0,0);
             setEventStart(initialDate.toISOString().split('T')[0]);
             setEventEnd(initialDate.toISOString().split('T')[0]);
+            setEventDescription('');
+            setEventLink('');
             setEventParticipants([]);
         }
+        setEventImageFile(null);
         setIsModalOpen(true);
     };
 
@@ -473,10 +489,36 @@ function Calendar({ db, user, appId }) {
             alert("請輸入活動標題");
             return;
         }
+        setIsUploading(true);
+
+        let imageUrl = selectedEvent?.imageUrl || '';
+
+        if (eventImageFile) {
+            const formData = new FormData();
+            formData.append('file', eventImageFile);
+            formData.append('upload_preset', CLOUDINARY_UPLOAD_PRESET);
+            try {
+                const response = await fetch(`https://api.cloudinary.com/v1_1/${CLOUDINARY_CLOUD_NAME}/image/upload`, {
+                    method: 'POST',
+                    body: formData,
+                });
+                const data = await response.json();
+                if (data.secure_url) {
+                    imageUrl = data.secure_url;
+                } else {
+                    throw new Error('圖片上傳失敗');
+                }
+            } catch (uploadError) {
+                console.error("附件上傳錯誤:", uploadError);
+                alert("上傳附件時發生錯誤。");
+                setIsUploading(false);
+                return;
+            }
+        }
         
         const start = new Date(eventStart);
         const end = new Date(eventEnd);
-        end.setHours(23, 59, 59, 999); // Set end to the end of the day
+        end.setHours(23, 59, 59, 999); 
 
         const participantsData = users.filter(u => eventParticipants.includes(u.uid)).map(u => ({ uid: u.uid, displayName: u.displayName }));
 
@@ -484,18 +526,28 @@ function Calendar({ db, user, appId }) {
             title: eventTitle,
             start: Timestamp.fromDate(start),
             end: Timestamp.fromDate(end),
+            description: eventDescription,
+            link: eventLink,
+            imageUrl: imageUrl,
             participants: participantsData,
             authorId: user.uid,
             authorName: user.displayName
         };
 
-        if (selectedEvent) {
-            const eventRef = doc(db, "artifacts", appId, "public", "data", "events", selectedEvent.id);
-            await updateDoc(eventRef, eventData);
-        } else {
-            await addDoc(collection(db, "artifacts", appId, "public", "data", "events"), eventData);
+        try {
+            if (selectedEvent) {
+                const eventRef = doc(db, "artifacts", appId, "public", "data", "events", selectedEvent.id);
+                await updateDoc(eventRef, eventData);
+            } else {
+                await addDoc(collection(db, "artifacts", appId, "public", "data", "events"), eventData);
+            }
+            handleCloseModal();
+        } catch (dbError) {
+            console.error("儲存行程失敗:", dbError);
+            alert("儲存行程時發生錯誤。");
+        } finally {
+            setIsUploading(false);
         }
-        handleCloseModal();
     };
 
     const handleDelete = async () => {
@@ -579,6 +631,24 @@ function Calendar({ db, user, appId }) {
                             <input id="event-end" type="date" value={eventEnd} onChange={e => setEventEnd(e.target.value)} className="shadow appearance-none border rounded w-full py-2 px-3 text-gray-700" />
                         </div>
                     </div>
+                    <div className="mb-4">
+                        <label className="block text-gray-700 text-sm font-bold mb-2" htmlFor="event-description">備註事項</label>
+                        <textarea id="event-description" value={eventDescription} onChange={e => setEventDescription(e.target.value)} rows="4" className="shadow appearance-none border rounded w-full py-2 px-3 text-gray-700"></textarea>
+                    </div>
+                    <div className="mb-4">
+                        <label className="block text-gray-700 text-sm font-bold mb-2" htmlFor="event-link">相關連結</label>
+                        <input id="event-link" type="url" value={eventLink} onChange={e => setEventLink(e.target.value)} placeholder="https://example.com" className="shadow appearance-none border rounded w-full py-2 px-3 text-gray-700" />
+                    </div>
+                    <div className="mb-4">
+                        <label className="block text-gray-700 text-sm font-bold mb-2">上傳附件</label>
+                        <input type="file" onChange={e => setEventImageFile(e.target.files[0])} accept="image/*" className="block w-full text-sm text-gray-500 file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:text-sm file:font-semibold file:bg-[#A2C4C9] file:text-white hover:file:bg-[#5F828B]" />
+                        {selectedEvent && selectedEvent.imageUrl && !eventImageFile && (
+                            <div className="mt-2">
+                                <p className="text-sm text-gray-600">目前附件：</p>
+                                <img src={selectedEvent.imageUrl} alt="Event attachment" className="max-h-40 rounded-md mt-1" />
+                            </div>
+                        )}
+                    </div>
                     <div className="mb-6">
                         <label className="block text-gray-700 text-sm font-bold mb-2">參與成員</label>
                         <div className="grid grid-cols-3 gap-2">
@@ -593,12 +663,14 @@ function Calendar({ db, user, appId }) {
                     <div className="flex justify-between items-center">
                         <div>
                             {selectedEvent && user.uid === selectedEvent.authorId && (
-                                <button type="button" onClick={handleDelete} className="bg-red-500 text-white px-4 py-2 rounded-lg hover:bg-red-600">刪除</button>
+                                <button type="button" onClick={handleDelete} className="bg-red-500 text-white px-4 py-2 rounded-lg hover:bg-red-600" disabled={isUploading}>刪除</button>
                             )}
                         </div>
                         <div className="flex gap-3">
                             <button type="button" onClick={handleCloseModal} className="bg-gray-200 text-gray-800 px-4 py-2 rounded-lg hover:bg-gray-300">取消</button>
-                            <button type="submit" className="bg-[#5F828B] text-white px-4 py-2 rounded-lg hover:bg-[#4A666F]">儲存</button>
+                            <button type="submit" className="bg-[#5F828B] text-white px-4 py-2 rounded-lg hover:bg-[#4A666F]" disabled={isUploading}>
+                                {isUploading ? '儲存中...' : '儲存'}
+                            </button>
                         </div>
                     </div>
                 </form>
