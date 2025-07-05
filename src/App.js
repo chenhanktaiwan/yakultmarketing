@@ -6,7 +6,6 @@ import {
     onAuthStateChanged, 
     signOut,
     updateProfile,
-    signInAnonymously,
     signInWithPopup,
     GoogleAuthProvider,
 } from 'firebase/auth';
