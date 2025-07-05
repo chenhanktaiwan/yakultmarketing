@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { onAuthStateChanged, signOut } from 'firebase/auth';
-import { doc, getDoc, setDoc, serverTimestamp } from 'firebase/firestore';
+import { doc, getDoc, setDoc, updateDoc, arrayUnion, serverTimestamp } from 'firebase/firestore';
 
 // --- 從我們的新家匯入需要的東西 ---
 import { auth, db } from './firebase/config';
@@ -18,11 +18,12 @@ function App() {
     const [user, setUser] = useState(null);
     const [userData, setUserData] = useState(null);
     const [loading, setLoading] = useState(true);
-    const [appId] = useState('default-app-id'); // 保持不變
+    const [appId] = useState('default-app-id');
 
     useEffect(() => {
         const unsubscribe = onAuthStateChanged(auth, async (currentUser) => {
             if (currentUser) {
+                // 1. 取得或建立使用者個人資料
                 const userDocRef = doc(db, "artifacts", appId, "users", currentUser.uid);
                 const userDocSnap = await getDoc(userDocRef);
 
@@ -35,13 +36,37 @@ function App() {
                         displayName: currentUser.displayName || `成員${currentUser.uid.substring(0, 5)}`,
                         photoURL: currentUser.photoURL || '',
                         personalInfo: '新成員',
-                        isApproved: true, // 預設為 true，或可改為 false 由管理員審核
+                        isApproved: true,
                         createdAt: serverTimestamp()
                     };
                     await setDoc(userDocRef, newUserProfile);
                     setUserData(newUserProfile);
                 }
                 setUser(currentUser);
+
+                // --- 【全新的邏輯在這裡】 ---
+                // 2. 確保「公開聊天室」存在，並將目前使用者加入
+                const generalChatRef = doc(db, "artifacts", appId, "public", "data", "chatRooms", "general");
+                const generalChatSnap = await getDoc(generalChatRef);
+
+                if (generalChatSnap.exists()) {
+                    // 如果聊天室已存在，就用 arrayUnion 把使用者加進去 (這個方法能防止重複加入)
+                    await updateDoc(generalChatRef, {
+                        members: arrayUnion(currentUser.uid)
+                    });
+                } else {
+                    // 如果聊天室不存在，就建立一個，並把目前使用者當作第一個成員
+                    await setDoc(generalChatRef, {
+                        name: "公開聊天室",
+                        type: "group",
+                        members: [currentUser.uid],
+                        createdAt: serverTimestamp(),
+                        lastMessage: '歡迎來到聊天室！',
+                        lastMessageTimestamp: serverTimestamp()
+                    });
+                }
+                // --- 【全新邏輯結束】 ---
+
             } else {
                 setUser(null);
                 setUserData(null);
@@ -71,7 +96,7 @@ function App() {
     return <MainApp user={user} userData={userData} appId={appId} />;
 }
 
-// --- 主要 App 介面框架 ---
+// --- 主要 App 介面框架 (保持不變) ---
 function MainApp({ user, userData, appId }) {
     const [activeTab, setActiveTab] = useState('announcements');
 
@@ -115,7 +140,6 @@ function MainApp({ user, userData, appId }) {
     );
 }
 
-// --- 導覽列按鈕 ---
 const NavItem = ({ icon, label, active, onClick }) => (
     <button onClick={onClick} className={`flex items-center space-x-2 px-3 py-2 rounded-md transition-colors ${active ? 'bg-[#5F828B] text-white' : 'text-gray-600 hover:bg-gray-100'}`}>
         <Icon name={icon} className="w-5 h-5" />
