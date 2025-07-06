@@ -5,7 +5,9 @@ import {
     multiFactor,
     PhoneAuthProvider,
     PhoneMultiFactorGenerator,
-    RecaptchaVerifier // 【修正處】: 匯入 RecaptchaVerifier 工具
+    RecaptchaVerifier,
+    GoogleAuthProvider,
+    reauthenticateWithPopup
 } from 'firebase/auth';
 import { doc, updateDoc, collection, onSnapshot, deleteDoc } from 'firebase/firestore';
 import { auth, db } from '../firebase/config';
@@ -282,18 +284,12 @@ function Sms2faModal({ isOpen, onClose, user }) {
     const recaptchaVerifierRef = useRef(null);
 
     useEffect(() => {
-        if (isOpen) {
-            if (!recaptchaVerifierRef.current) {
-                // 【修正處】: 使用正確的建構式 new RecaptchaVerifier(auth, ...)
-                recaptchaVerifierRef.current = new RecaptchaVerifier(auth, 'recaptcha-container', {
-                    'size': 'invisible',
-                    'callback': (response) => {
-                        console.log("reCAPTCHA solved");
-                    }
-                });
-                // 確保 reCAPTCHA 只被渲染一次
-                recaptchaVerifierRef.current.render();
-            }
+        if (isOpen && !recaptchaVerifierRef.current) {
+            recaptchaVerifierRef.current = new RecaptchaVerifier(auth, 'recaptcha-container', {
+                'size': 'invisible',
+                'callback': () => { console.log("reCAPTCHA solved"); }
+            });
+            recaptchaVerifierRef.current.render();
         }
     }, [isOpen]);
 
@@ -305,6 +301,11 @@ function Sms2faModal({ isOpen, onClose, user }) {
         }
         setIsLoading(true);
         try {
+            // 【最終修正】: 在發送簡訊前，先要求使用者重新驗證身份
+            const provider = new GoogleAuthProvider();
+            await reauthenticateWithPopup(user, provider);
+            
+            // 驗證成功後，才繼續發送簡訊
             const multiFactorSession = await multiFactor(user).getSession();
             const phoneInfoOptions = {
                 phoneNumber: phoneNumber,
@@ -316,7 +317,11 @@ function Sms2faModal({ isOpen, onClose, user }) {
             alert("驗證碼已發送！");
         } catch (error) {
             console.error("發送簡訊失敗:", error);
-            setError(`發送簡訊失敗: ${error.message}`);
+            if (error.code === 'auth/popup-closed-by-user') {
+                setError("您取消了驗證程序。");
+            } else {
+                setError(`發送簡訊失敗: ${error.message}`);
+            }
         } finally {
             setIsLoading(false);
         }
@@ -355,7 +360,7 @@ function Sms2faModal({ isOpen, onClose, user }) {
                     <div className="flex justify-end gap-3 mt-6">
                         <button type="button" onClick={onClose} className="bg-gray-200 text-gray-800 px-4 py-2 rounded-lg hover:bg-gray-300">取消</button>
                         <button onClick={handleSendCode} className="bg-blue-500 text-white px-4 py-2 rounded-lg hover:bg-blue-600" disabled={isLoading}>
-                            {isLoading ? '發送中...' : '發送驗證碼'}
+                            {isLoading ? '驗證中...' : '發送驗證碼'}
                         </button>
                     </div>
                 </div>
