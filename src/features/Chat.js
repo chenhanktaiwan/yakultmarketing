@@ -3,14 +3,15 @@ import { db } from '../firebase/config';
 import { collection, query, onSnapshot, addDoc, doc, getDoc, setDoc, where, orderBy, serverTimestamp, updateDoc } from 'firebase/firestore';
 import Icon from '../components/Icon';
 
-// --- 【全新修正】: 連結預覽情報員 ---
+// --- 【連結預覽情報員】 ---
 const LinkPreview = ({ url }) => {
     const [preview, setPreview] = useState(null);
     const [status, setStatus] = useState('loading'); // 'loading', 'success', 'error', 'no-preview'
 
     useEffect(() => {
-        let isMounted = true; // 防止元件卸載後還在更新狀態
-        // 使用一個免費的代理服務來取得網址元數據
+        let isMounted = true;
+        setStatus('loading'); // Reset status on new URL
+
         fetch(`https://jsonlink.io/api/extractor?url=${encodeURIComponent(url)}`)
             .then(res => {
                 if (!res.ok) {
@@ -82,34 +83,40 @@ const MessageRenderer = ({ text }) => {
     if (firstMatch) {
         firstUrl = firstMatch[0];
     }
-
-    // 重設正規表示式，用於後續的分割
-    const urlRegexForSplit = new RegExp(urlRegex.source, "ig");
-
-    // 將文字分割成「一般文字」和「網址」
-    const textParts = text.split(urlRegexForSplit);
     
+    // 使用迴圈來找出所有匹配的網址
+    while ((match = urlRegex.exec(text)) !== null) {
+        // 將網址前的文字加入結果
+        if (match.index > lastIndex) {
+            parts.push(text.substring(lastIndex, match.index));
+        }
+        
+        const url = match[0];
+        // 將網址轉換成可點擊的連結元件
+        parts.push(
+            <a
+                key={match.index}
+                href={url}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="text-blue-600 hover:text-blue-800 underline"
+                onClick={(e) => e.stopPropagation()}
+            >
+                {url}
+            </a>
+        );
+        
+        lastIndex = urlRegex.lastIndex;
+    }
+
+    // 將最後一個網址後的文字加入結果
+    if (lastIndex < text.length) {
+        parts.push(text.substring(lastIndex));
+    }
+
     return (
         <div>
-            {textParts.map((part, index) => {
-                if (part && urlRegexForSplit.test(part)) {
-                    // 這是網址部分
-                    return (
-                        <a
-                            key={index}
-                            href={part}
-                            target="_blank"
-                            rel="noopener noreferrer"
-                            className="text-blue-600 hover:text-blue-800 underline"
-                            onClick={(e) => e.stopPropagation()}
-                        >
-                            {part}
-                        </a>
-                    );
-                }
-                // 這是一般文字部分
-                return <span key={index}>{part}</span>;
-            })}
+            {parts.map((part, index) => <React.Fragment key={index}>{part}</React.Fragment>)}
             {/* 只為第一則網址顯示預覽 */}
             {firstUrl && <LinkPreview url={firstUrl} />}
         </div>
