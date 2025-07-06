@@ -22,7 +22,7 @@ function Profile({ user, userData, appId }) {
     const CLOUDINARY_CLOUD_NAME = process.env.REACT_APP_CLOUDINARY_CLOUD_NAME;
     const CLOUDINARY_UPLOAD_PRESET = process.env.REACT_APP_CLOUDINARY_UPLOAD_PRESET;
     
-    // 個人資料編輯狀態 (加上 || '' 保護，避免初始值為 undefined)
+    // 個人資料編輯狀態
     const [displayName, setDisplayName] = useState(userData.displayName || '');
     const [personalInfo, setPersonalInfo] = useState(userData.personalInfo || '');
     const [photo, setPhoto] = useState(null);
@@ -37,8 +37,8 @@ function Profile({ user, userData, appId }) {
     const [isPasswordModalOpen, setIsPasswordModalOpen] = useState(false);
     const [is2faModalOpen, setIs2faModalOpen] = useState(false);
     
-    // 【最終修正】: 使用 ?? 運算子提供預設值，徹底避免 undefined 錯誤。
-    const is2faEnabled = (user.multiFactor?.enrolledFactors?.length ?? 0) > 0;
+    // 【防彈級修正】: 使用最傳統、最安全的 '&&' 寫法，確保在任何情況下都不會出錯。
+    const is2faEnabled = user && user.multiFactor && user.multiFactor.enrolledFactors && user.multiFactor.enrolledFactors.length > 0;
 
     // 取得所有團隊成員的資料
     useEffect(() => {
