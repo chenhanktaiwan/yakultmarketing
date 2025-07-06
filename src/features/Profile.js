@@ -2,10 +2,10 @@ import React, { useState, useEffect, useRef } from 'react';
 import { 
     updateProfile, 
     updatePassword, 
-    EmailAuthProvider, 
-    reauthenticateWithCredential,
     multiFactor,
-    TotpMultiFactorGenerator
+    TotpMultiFactorGenerator,
+    GoogleAuthProvider, // 【修正處】: 匯入 Google 登入工具
+    reauthenticateWithPopup // 【修正處】: 匯入彈出視窗驗證工具
 } from 'firebase/auth';
 import { doc, updateDoc, collection, onSnapshot, deleteDoc } from 'firebase/firestore';
 import { auth, db } from '../firebase/config';
@@ -15,11 +15,9 @@ import Modal from '../components/Modal';
 // --- 主要 Profile 元件 ---
 function Profile({ user, userData, appId }) {
     
-    // 【最終修正】: 將 Cloudinary 設定加回來
     const CLOUDINARY_CLOUD_NAME = process.env.REACT_APP_CLOUDINARY_CLOUD_NAME;
     const CLOUDINARY_UPLOAD_PRESET = process.env.REACT_APP_CLOUDINARY_UPLOAD_PRESET;
 
-    // 將所有 Hooks (useState, useEffect 等) 都移到元件的最頂部，確保它們總是被呼叫。
     const [displayName, setDisplayName] = useState(userData?.displayName || '');
     const [personalInfo, setPersonalInfo] = useState(userData?.personalInfo || '');
     const [photo, setPhoto] = useState(null);
@@ -42,7 +40,6 @@ function Profile({ user, userData, appId }) {
         return () => unsubscribe();
     }, [appId]);
 
-    // 將這個保護機制移到所有 Hooks 之後。
     if (!user || !userData) {
         return <div className="text-center p-8">正在載入成員資料...</div>;
     }
@@ -285,27 +282,40 @@ function TwoFactorAuthModal({ isOpen, onClose, user }) {
 
     useEffect(() => {
         if (isOpen && user) {
-            const generateTfaSecret = async () => {
+            const reauthAndGenerate = async () => {
                 try {
+                    // 【修正處】: 在產生 QR Code 之前，先要求使用者重新驗證
+                    const provider = new GoogleAuthProvider();
+                    await reauthenticateWithPopup(user, provider);
+
+                    // 驗證成功後，才繼續產生 QR Code
                     const multiFactorSession = await multiFactor(user).getSession();
                     const tfaSecret = await TotpMultiFactorGenerator.generateSecret(multiFactorSession);
                     setSecret(tfaSecret);
                     
                     const otpauthUri = `otpauth://totp/YakultWorkstation:${user.email}?secret=${tfaSecret.secretKey}&issuer=YakultWorkstation`;
                     setQrCodeUrl(`https://api.qrserver.com/v1/create-qr-code/?size=200x200&data=${encodeURIComponent(otpauthUri)}`);
+                
                 } catch (error) {
-                    console.error("產生 2FA secret 失敗:", error);
-                    setError("無法產生驗證資訊，請稍後再試。");
+                    console.error("2FA 設定失敗:", error);
+                    // 如果使用者關閉彈出視窗，就關閉 Modal
+                    if (error.code === 'auth/popup-closed-by-user') {
+                        setError("您取消了驗證程序。");
+                        onClose();
+                    } else {
+                        setError("無法完成使用者驗證，請稍後再試。");
+                    }
                 }
             };
-            generateTfaSecret();
+            reauthAndGenerate();
         } else {
+            // 重置狀態
             setSecret(null);
             setQrCodeUrl('');
             setVerificationCode('');
             setError('');
         }
-    }, [isOpen, user]);
+    }, [isOpen, user, onClose]); // 【修正處】: 將 onClose 加入依賴
 
     const handleSubmit = async (e) => {
         e.preventDefault();
@@ -336,7 +346,7 @@ function TwoFactorAuthModal({ isOpen, onClose, user }) {
                 {qrCodeUrl ? (
                     <img src={qrCodeUrl} alt="2FA QR Code" className="mx-auto border rounded-lg" />
                 ) : (
-                    <p>正在產生 QR Code...</p>
+                    <p>正在等待使用者驗證身份...</p>
                 )}
                 <p className="mt-4 mb-2 text-sm text-gray-600">掃描後，在下方輸入 App 顯示的 6 位數驗證碼以完成設定。</p>
                 <form onSubmit={handleSubmit}>
@@ -351,7 +361,7 @@ function TwoFactorAuthModal({ isOpen, onClose, user }) {
                     {error && <p className="text-red-500 text-sm mt-4">{error}</p>}
                     <div className="flex justify-end gap-3 mt-6">
                         <button type="button" onClick={onClose} className="bg-gray-200 text-gray-800 px-4 py-2 rounded-lg hover:bg-gray-300">取消</button>
-                        <button type="submit" className="bg-green-500 text-white px-4 py-2 rounded-lg hover:bg-green-600" disabled={isLoading}>
+                        <button type="submit" className="bg-green-500 text-white px-4 py-2 rounded-lg hover:bg-green-600" disabled={isLoading || !qrCodeUrl}>
                             {isLoading ? '驗證中...' : '驗證並啟用'}
                         </button>
                     </div>
