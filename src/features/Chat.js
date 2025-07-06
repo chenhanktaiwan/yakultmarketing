@@ -6,34 +6,44 @@ import Icon from '../components/Icon';
 // --- 【全新修正】: 連結預覽情報員 ---
 const LinkPreview = ({ url }) => {
     const [preview, setPreview] = useState(null);
-    const [isLoading, setIsLoading] = useState(true);
+    const [status, setStatus] = useState('loading'); // 'loading', 'success', 'error', 'no-preview'
 
     useEffect(() => {
         let isMounted = true; // 防止元件卸載後還在更新狀態
         // 使用一個免費的代理服務來取得網址元數據
         fetch(`https://jsonlink.io/api/extractor?url=${encodeURIComponent(url)}`)
-            .then(res => res.json())
+            .then(res => {
+                if (!res.ok) {
+                    throw new Error(`HTTP 錯誤! 狀態: ${res.status}`);
+                }
+                return res.json();
+            })
             .then(data => {
-                if (isMounted && data && data.title) {
-                    setPreview(data);
+                if (isMounted) {
+                    if (data && data.title) {
+                        setPreview(data);
+                        setStatus('success');
+                    } else {
+                        setStatus('no-preview');
+                    }
                 }
             })
-            .catch(err => console.error("無法取得連結預覽:", err))
-            .finally(() => {
+            .catch(err => {
+                console.error("無法取得連結預覽:", err);
                 if (isMounted) {
-                    setIsLoading(false);
+                    setStatus('error');
                 }
             });
         
         return () => { isMounted = false; };
     }, [url]);
 
-    if (isLoading) {
+    if (status === 'loading') {
         return <div className="mt-2 text-xs text-gray-400">正在載入預覽...</div>;
     }
 
-    if (!preview) {
-        return null; // 如果沒有預覽資訊，就不顯示任何東西
+    if (status !== 'success' || !preview) {
+        return null; // 如果出錯或沒有預覽資訊，就不顯示任何東西
     }
 
     return (
@@ -56,55 +66,54 @@ const LinkPreview = ({ url }) => {
 
 // --- 【全新修正】: 訊息顯示元件 ---
 const MessageRenderer = ({ text }) => {
-    if (typeof text !== 'string') {
-        return <span>{text}</span>;
+    if (typeof text !== 'string' || !text) {
+        return null;
     }
+
     // 這個正規表示式能更準確地找到網址
     const urlRegex = /(\b(https?|ftp|file):\/\/[-A-Z0-9+&@#\/%?=~_|!:,.;]*[-A-Z0-9+&@#\/%=~_|])/ig;
     const parts = [];
     let lastIndex = 0;
     let match;
-    let firstUrlFound = false;
+    let firstUrl = null;
 
-    // 使用迴圈來找出所有匹配的網址
-    while ((match = urlRegex.exec(text)) !== null) {
-        // 將網址前的文字加入結果
-        if (match.index > lastIndex) {
-            parts.push(text.substring(lastIndex, match.index));
-        }
-        
-        const url = match[0];
-        const isFirstUrl = !firstUrlFound;
-        if (isFirstUrl) {
-            firstUrlFound = true;
-        }
-
-        // 將網址轉換成可點擊的連結元件
-        parts.push(
-            <React.Fragment key={match.index}>
-                <a
-                    href={url}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="text-blue-600 hover:text-blue-800 underline"
-                    onClick={(e) => e.stopPropagation()}
-                >
-                    {url}
-                </a>
-                {/* 只為第一則網址顯示預覽 */}
-                {isFirstUrl && <LinkPreview url={url} />}
-            </React.Fragment>
-        );
-        
-        lastIndex = match.index + url.length;
+    // 找出第一個網址，用於預覽
+    const firstMatch = text.match(urlRegex);
+    if (firstMatch) {
+        firstUrl = firstMatch[0];
     }
 
-    // 將最後一個網址後的文字加入結果
-    if (lastIndex < text.length) {
-        parts.push(text.substring(lastIndex));
-    }
+    // 重設正規表示式，用於後續的分割
+    const urlRegexForSplit = new RegExp(urlRegex.source, "ig");
 
-    return <span>{parts}</span>;
+    // 將文字分割成「一般文字」和「網址」
+    const textParts = text.split(urlRegexForSplit);
+    
+    return (
+        <div>
+            {textParts.map((part, index) => {
+                if (part && urlRegexForSplit.test(part)) {
+                    // 這是網址部分
+                    return (
+                        <a
+                            key={index}
+                            href={part}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="text-blue-600 hover:text-blue-800 underline"
+                            onClick={(e) => e.stopPropagation()}
+                        >
+                            {part}
+                        </a>
+                    );
+                }
+                // 這是一般文字部分
+                return <span key={index}>{part}</span>;
+            })}
+            {/* 只為第一則網址顯示預覽 */}
+            {firstUrl && <LinkPreview url={firstUrl} />}
+        </div>
+    );
 };
 
 
