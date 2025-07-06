@@ -3,8 +3,9 @@ import {
     updateProfile, 
     updatePassword, 
     multiFactor,
-    PhoneAuthProvider, // 【修正處】: 改用手機驗證工具
-    PhoneMultiFactorGenerator // 【修正處】: 改用手機驗證工具
+    PhoneAuthProvider,
+    PhoneMultiFactorGenerator,
+    RecaptchaVerifier // 【修正處】: 匯入 RecaptchaVerifier 工具
 } from 'firebase/auth';
 import { doc, updateDoc, collection, onSnapshot, deleteDoc } from 'firebase/firestore';
 import { auth, db } from '../firebase/config';
@@ -271,7 +272,7 @@ function PasswordModal({ isOpen, onClose, user }) {
     );
 }
 
-// --- 【全新功能】: SMS 簡訊 2FA 設定 Modal 元件 ---
+// --- SMS 簡訊 2FA 設定 Modal 元件 ---
 function Sms2faModal({ isOpen, onClose, user }) {
     const [phoneNumber, setPhoneNumber] = useState('');
     const [verificationCode, setVerificationCode] = useState('');
@@ -280,19 +281,18 @@ function Sms2faModal({ isOpen, onClose, user }) {
     const [isLoading, setIsLoading] = useState(false);
     const recaptchaVerifierRef = useRef(null);
 
-    // 當 Modal 開啟時，初始化 reCAPTCHA
     useEffect(() => {
         if (isOpen) {
-            // 確保只初始化一次
             if (!recaptchaVerifierRef.current) {
-                // Firebase 要求一個可見的 reCAPTCHA 容器
-                recaptchaVerifierRef.current = new auth.RecaptchaVerifier('recaptcha-container', {
+                // 【修正處】: 使用正確的建構式 new RecaptchaVerifier(auth, ...)
+                recaptchaVerifierRef.current = new RecaptchaVerifier(auth, 'recaptcha-container', {
                     'size': 'invisible',
                     'callback': (response) => {
-                        // reCAPTCHA 驗證成功
                         console.log("reCAPTCHA solved");
                     }
                 });
+                // 確保 reCAPTCHA 只被渲染一次
+                recaptchaVerifierRef.current.render();
             }
         }
     }, [isOpen]);
@@ -345,22 +345,12 @@ function Sms2faModal({ isOpen, onClose, user }) {
 
     return (
         <Modal isOpen={isOpen} onClose={onClose} title="啟用兩步驟驗證 (SMS)">
-            {/* 這個隱藏的 div 是 reCAPTCHA 必要容器 */}
             <div id="recaptcha-container"></div>
-
             {!verificationId ? (
-                // 步驟一: 輸入手機號碼
                 <div>
                     <p className="mb-4">請輸入您的手機號碼以接收簡訊驗證碼。請務必包含國碼。</p>
                     <label className="block text-gray-700 text-sm font-bold mb-2" htmlFor="phone-number">手機號碼</label>
-                    <input 
-                        id="phone-number"
-                        type="tel"
-                        value={phoneNumber}
-                        onChange={(e) => setPhoneNumber(e.target.value)}
-                        placeholder="+886912345678"
-                        className="shadow appearance-none border rounded w-full py-2 px-3"
-                    />
+                    <input id="phone-number" type="tel" value={phoneNumber} onChange={(e) => setPhoneNumber(e.target.value)} placeholder="+886912345678" className="shadow appearance-none border rounded w-full py-2 px-3" />
                     {error && <p className="text-red-500 text-sm mt-4">{error}</p>}
                     <div className="flex justify-end gap-3 mt-6">
                         <button type="button" onClick={onClose} className="bg-gray-200 text-gray-800 px-4 py-2 rounded-lg hover:bg-gray-300">取消</button>
@@ -370,19 +360,10 @@ function Sms2faModal({ isOpen, onClose, user }) {
                     </div>
                 </div>
             ) : (
-                // 步驟二: 輸入驗證碼
                 <div>
                     <p className="mb-4">我們已將 6 位數驗證碼發送到 <span className="font-semibold">{phoneNumber}</span>。請在下方輸入以完成設定。</p>
                     <label className="block text-gray-700 text-sm font-bold mb-2" htmlFor="verification-code">驗證碼</label>
-                    <input 
-                        id="verification-code"
-                        type="text"
-                        value={verificationCode}
-                        onChange={(e) => setVerificationCode(e.target.value)}
-                        placeholder="123456"
-                        maxLength="6"
-                        className="text-center text-2xl tracking-[.5em] w-48 mx-auto shadow appearance-none border rounded py-2 px-3"
-                    />
+                    <input id="verification-code" type="text" value={verificationCode} onChange={(e) => setVerificationCode(e.target.value)} placeholder="123456" maxLength="6" className="text-center text-2xl tracking-[.5em] w-48 mx-auto shadow appearance-none border rounded py-2 px-3" />
                     {error && <p className="text-red-500 text-sm mt-4">{error}</p>}
                     <div className="flex justify-end gap-3 mt-6">
                         <button type="button" onClick={() => setVerificationId(null)} className="bg-gray-200 text-gray-800 px-4 py-2 rounded-lg hover:bg-gray-300">返回</button>
