@@ -3,6 +3,35 @@ import { db } from '../firebase/config';
 import { collection, query, onSnapshot, addDoc, doc, getDoc, setDoc, where, orderBy, serverTimestamp, updateDoc } from 'firebase/firestore';
 import Icon from '../components/Icon';
 
+// --- 【新增功能】: 網址轉換小幫手 ---
+// 這個元件會接收一段文字，並將其中的網址轉換成可點擊的 <a> 標籤
+const Linkify = ({ text }) => {
+    // 使用正規表示式來尋找網址
+    const urlRegex = /(https?:\/\/[^\s]+)/g;
+    const parts = text.split(urlRegex);
+
+    return (
+        <span>
+            {parts.map((part, index) => 
+                urlRegex.test(part) ? (
+                    <a 
+                        key={index} 
+                        href={part} 
+                        target="_blank" 
+                        rel="noopener noreferrer"
+                        className="text-blue-500 hover:underline"
+                    >
+                        {part}
+                    </a>
+                ) : (
+                    <span key={index}>{part}</span>
+                )
+            )}
+        </span>
+    );
+};
+
+
 // 時間格式化工具 (保持不變)
 function formatLastMessageTime(timestamp) {
     if (!timestamp) return '';
@@ -30,11 +59,9 @@ function Chat({ user, appId }) {
     const [messages, setMessages] = useState([]);
     const [newMessage, setNewMessage] = useState('');
     const messagesEndRef = useRef(null);
+    const [sidebarView, setSidebarView] = useState('list');
 
-    // 【新增功能】: 用來控制側邊欄要顯示「聊天列表」還是「新增聊天成員列表」
-    const [sidebarView, setSidebarView] = useState('list'); // 'list' 或 'newUser'
-
-    // 取得所有使用者資料 (為了「新增聊天」列表)
+    // 取得所有使用者資料
     useEffect(() => {
         if (!db || !appId) return;
         const usersCollectionRef = collection(db, "artifacts", appId, "users");
@@ -45,7 +72,7 @@ function Chat({ user, appId }) {
         return unsubscribe;
     }, [db, appId]);
 
-    // 取得使用者參與的聊天室 (保持不變)
+    // 取得使用者參與的聊天室
     useEffect(() => {
         if (!db || !user) return;
         const chatRoomsRef = collection(db, "artifacts", appId, "public", "data", "chatRooms");
@@ -63,7 +90,7 @@ function Chat({ user, appId }) {
         return unsubscribe;
     }, [db, user, appId]);
 
-    // 取得訊息 (保持不變)
+    // 取得訊息
     useEffect(() => {
         if (!db || !activeChat) {
             setMessages([]);
@@ -83,7 +110,7 @@ function Chat({ user, appId }) {
         messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
     }, [messages]);
 
-    // 傳送訊息 (保持不變)
+    // 傳送訊息
     const handleSendMessage = async (e) => {
         e.preventDefault();
         if (newMessage.trim() === '' || !activeChat) return;
@@ -104,7 +131,7 @@ function Chat({ user, appId }) {
         });
     };
     
-    // 【修改功能】: 開始 1 對 1 聊天後，要切回列表視圖
+    // 開始 1 對 1 聊天
     const startDirectChat = async (targetUser) => {
         if (targetUser.id === user.uid) return;
         const chatRoomId = [user.uid, targetUser.id].sort().join('_');
@@ -123,10 +150,10 @@ function Chat({ user, appId }) {
         }
         const newActiveChat = (await getDoc(chatRoomRef)).data();
         setActiveChat({id: chatRoomId, ...newActiveChat});
-        setSidebarView('list'); // 切回聊天列表
+        setSidebarView('list');
     };
 
-    // 輔助函式 (保持不變)
+    // 輔助函式
     const getChatName = (room) => {
         if (!room) return '';
         if (room.type === 'group') return room.name;
@@ -146,7 +173,6 @@ function Chat({ user, appId }) {
         <div className="bg-white rounded-lg shadow-sm border border-gray-200 h-[80vh] flex">
             {/* Sidebar */}
             <div className="w-1/3 border-r border-gray-200 flex flex-col">
-                {/* 【修改功能】: 根據 sidebarView 顯示不同內容 */}
                 {sidebarView === 'list' ? (
                     <>
                         <div className="p-4 border-b flex justify-between items-center">
@@ -194,7 +220,7 @@ function Chat({ user, appId }) {
                 )}
             </div>
 
-            {/* Main Chat Area (保持不變) */}
+            {/* Main Chat Area */}
             <div className="w-2/3 flex flex-col">
                 {activeChat ? (
                     <>
@@ -208,7 +234,8 @@ function Chat({ user, appId }) {
                                     <div key={msg.id} className={`flex items-end gap-3 ${msg.senderId === user.uid ? 'justify-end' : 'justify-start'}`}>
                                         {msg.senderId !== user.uid && ( <img src={msg.senderPhotoURL || `https://placehold.co/40x40/5F828B/FFFFFF?text=${msg.senderName ? msg.senderName[0] : '?'}`} alt="sender" className="w-8 h-8 rounded-full" /> )}
                                         <div className={`max-w-xs lg:max-w-md px-4 py-2 rounded-xl ${msg.senderId === user.uid ? 'bg-[#5F828B] text-white' : 'bg-white shadow-sm'}`}>
-                                            <p className="text-sm">{msg.text}</p>
+                                            {/* 【修改處】: 使用新的 Linkify 元件來顯示訊息 */}
+                                            <p className="text-sm break-words"><Linkify text={msg.text} /></p>
                                             <p className={`text-xs mt-1 text-right ${msg.senderId === user.uid ? 'text-gray-300' : 'text-gray-500'}`}>{msg.timestamp ? new Date(msg.timestamp.seconds * 1000).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'}) : ''}</p>
                                         </div>
                                          {msg.senderId === user.uid && ( <img src={user.photoURL || `https://placehold.co/40x40/5F828B/FFFFFF?text=${user.displayName[0]}`} alt="sender" className="w-8 h-8 rounded-full" /> )}
