@@ -3,38 +3,74 @@ import { db } from '../firebase/config';
 import { collection, query, onSnapshot, addDoc, doc, getDoc, setDoc, where, orderBy, serverTimestamp, updateDoc } from 'firebase/firestore';
 import Icon from '../components/Icon';
 
-// --- 【最終修正】: 採用更強大的網址轉換小幫手 ---
-const Linkify = ({ text }) => {
-    // 檢查傳入的文字是否為有效的字串
+// --- 【全新功能】: 連結預覽情報員 ---
+// 這個元件會接收一個網址，並去外部服務取得預覽資訊
+const LinkPreview = ({ url }) => {
+    const [preview, setPreview] = useState(null);
+    const [isLoading, setIsLoading] = useState(true);
+
+    useEffect(() => {
+        // 使用一個免費的代理服務來取得網址元數據，避免 CORS 問題
+        fetch(`https://jsonlink.io/api/extractor?url=${encodeURIComponent(url)}`)
+            .then(res => res.json())
+            .then(data => {
+                if (data && data.title) {
+                    setPreview(data);
+                }
+            })
+            .catch(err => console.error("無法取得連結預覽:", err))
+            .finally(() => setIsLoading(false));
+    }, [url]);
+
+    // 如果正在載入或沒有預覽資訊，就不顯示任何東西
+    if (isLoading || !preview) {
+        return null;
+    }
+
+    return (
+        <a href={url} target="_blank" rel="noopener noreferrer" className="mt-2 block bg-gray-100 hover:bg-gray-200 p-3 rounded-lg">
+            <div className="flex gap-3">
+                {preview.image && (
+                    <img src={preview.image} alt="Link preview" className="w-24 h-24 object-cover rounded-md flex-shrink-0" />
+                )}
+                <div className="flex flex-col justify-center overflow-hidden">
+                    <h4 className="font-bold text-sm text-gray-800 truncate">{preview.title}</h4>
+                    <p className="text-xs text-gray-600 mt-1 line-clamp-2">{preview.description}</p>
+                    <p className="text-xs text-gray-400 mt-2 truncate">{preview.domain}</p>
+                </div>
+            </div>
+        </a>
+    );
+};
+
+
+// --- 【升級功能】: 網址轉換小幫手，現在會包含連結預覽 ---
+const MessageRenderer = ({ text }) => {
     if (typeof text !== 'string') {
         return <span>{text}</span>;
     }
-    // 使用一個更強大、能處理複雜網址的正規表示式
     const urlRegex = /(\b(https?|ftp|file):\/\/[-A-Z0-9+&@#\/%?=~_|!:,.;]*[-A-Z0-9+&@#\/%=~_|])/ig;
-    
-    // 將文字分割成「一般文字」和「網址」兩種類型
     const parts = text.split(urlRegex);
 
     return (
         <span>
             {parts.map((part, index) => {
-                // 檢查分割出來的部分是否為一個完整的網址
                 if (part && part.match(urlRegex)) {
                     return (
-                        <a 
-                            key={index} 
-                            href={part} 
-                            target="_blank" 
-                            rel="noopener noreferrer"
-                            className="text-blue-600 hover:text-blue-800 underline"
-                            // 防止點擊連結時觸發父層的事件
-                            onClick={(e) => e.stopPropagation()}
-                        >
-                            {part}
-                        </a>
+                        <React.Fragment key={index}>
+                            <a 
+                                href={part} 
+                                target="_blank" 
+                                rel="noopener noreferrer"
+                                className="text-blue-600 hover:text-blue-800 underline"
+                                onClick={(e) => e.stopPropagation()}
+                            >
+                                {part}
+                            </a>
+                            <LinkPreview url={part} />
+                        </React.Fragment>
                     );
                 }
-                // 如果不是網址，就當作一般文字顯示
                 return <span key={index}>{part}</span>;
             })}
         </span>
@@ -49,17 +85,10 @@ function formatLastMessageTime(timestamp) {
     const now = new Date();
     
     if (date.toDateString() === now.toDateString()) {
-        return date.toLocaleTimeString('zh-TW', {
-            hour: 'numeric',
-            minute: '2-digit',
-            hour12: true,
-        });
+        return date.toLocaleTimeString('zh-TW', { hour: 'numeric', minute: '2-digit', hour12: true });
     }
     
-    return date.toLocaleDateString('zh-TW', {
-        month: 'numeric',
-        day: 'numeric'
-    });
+    return date.toLocaleDateString('zh-TW', { month: 'numeric', day: 'numeric' });
 }
 
 function Chat({ user, appId }) {
@@ -71,7 +100,6 @@ function Chat({ user, appId }) {
     const messagesEndRef = useRef(null);
     const [sidebarView, setSidebarView] = useState('list');
 
-    // 取得所有使用者資料
     useEffect(() => {
         if (!db || !appId) return;
         const usersCollectionRef = collection(db, "artifacts", appId, "users");
@@ -82,7 +110,6 @@ function Chat({ user, appId }) {
         return unsubscribe;
     }, [db, appId]);
 
-    // 取得使用者參與的聊天室
     useEffect(() => {
         if (!db || !user) return;
         const chatRoomsRef = collection(db, "artifacts", appId, "public", "data", "chatRooms");
@@ -96,11 +123,9 @@ function Chat({ user, appId }) {
                 setActiveChat(rooms[0]); 
             }
         });
-
         return unsubscribe;
     }, [db, user, appId]);
 
-    // 取得訊息
     useEffect(() => {
         if (!db || !activeChat) {
             setMessages([]);
@@ -108,7 +133,6 @@ function Chat({ user, appId }) {
         };
         const messagesRef = collection(db, "artifacts", appId, "public", "data", "chatRooms", activeChat.id, "messages");
         const q = query(messagesRef, orderBy("timestamp", "asc"));
-
         const unsubscribe = onSnapshot(q, (snapshot) => {
             const msgs = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
             setMessages(msgs);
@@ -120,7 +144,6 @@ function Chat({ user, appId }) {
         messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
     }, [messages]);
 
-    // 傳送訊息
     const handleSendMessage = async (e) => {
         e.preventDefault();
         if (newMessage.trim() === '' || !activeChat) return;
@@ -141,7 +164,6 @@ function Chat({ user, appId }) {
         });
     };
     
-    // 開始 1 對 1 聊天
     const startDirectChat = async (targetUser) => {
         if (targetUser.id === user.uid) return;
         const chatRoomId = [user.uid, targetUser.id].sort().join('_');
@@ -163,7 +185,6 @@ function Chat({ user, appId }) {
         setSidebarView('list');
     };
 
-    // 輔助函式
     const getChatName = (room) => {
         if (!room) return '';
         if (room.type === 'group') return room.name;
@@ -244,7 +265,8 @@ function Chat({ user, appId }) {
                                     <div key={msg.id} className={`flex items-end gap-3 ${msg.senderId === user.uid ? 'justify-end' : 'justify-start'}`}>
                                         {msg.senderId !== user.uid && ( <img src={msg.senderPhotoURL || `https://placehold.co/40x40/5F828B/FFFFFF?text=${msg.senderName ? msg.senderName[0] : '?'}`} alt="sender" className="w-8 h-8 rounded-full" /> )}
                                         <div className={`max-w-xs lg:max-w-md px-4 py-2 rounded-xl ${msg.senderId === user.uid ? 'bg-[#5F828B] text-white' : 'bg-white shadow-sm'}`}>
-                                            <p className="text-sm break-words"><Linkify text={msg.text} /></p>
+                                            {/* 【修改處】: 使用新的 MessageRenderer 元件來顯示訊息 */}
+                                            <p className="text-sm break-words"><MessageRenderer text={msg.text} /></p>
                                             <p className={`text-xs mt-1 text-right ${msg.senderId === user.uid ? 'text-gray-300' : 'text-gray-500'}`}>{msg.timestamp ? new Date(msg.timestamp.seconds * 1000).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'}) : ''}</p>
                                         </div>
                                          {msg.senderId === user.uid && ( <img src={user.photoURL || `https://placehold.co/40x40/5F828B/FFFFFF?text=${user.displayName[0]}`} alt="sender" className="w-8 h-8 rounded-full" /> )}
