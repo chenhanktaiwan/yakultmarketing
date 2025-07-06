@@ -14,7 +14,6 @@ import Modal from '../components/Modal';
 
 // --- 主要 Profile 元件 ---
 function Profile({ user, userData, appId }) {
-    // 【修正處】: 新增一個保護機制，如果核心資料還沒載入，就先顯示讀取中畫面。
     if (!user || !userData) {
         return <div className="text-center p-8">正在載入成員資料...</div>;
     }
@@ -38,8 +37,8 @@ function Profile({ user, userData, appId }) {
     const [isPasswordModalOpen, setIsPasswordModalOpen] = useState(false);
     const [is2faModalOpen, setIs2faModalOpen] = useState(false);
     
-    // 【修正處】: 改用更安全的 `user` prop 來檢查，並加上可選串連 (?.)
-    const is2faEnabled = user.multiFactor?.enrolledFactors.length > 0;
+    // 【最終修正】: 使用 ?? 運算子提供預設值，徹底避免 undefined 錯誤。
+    const is2faEnabled = (user.multiFactor?.enrolledFactors?.length ?? 0) > 0;
 
     // 取得所有團隊成員的資料
     useEffect(() => {
@@ -215,7 +214,6 @@ function Profile({ user, userData, appId }) {
                 </div>
             </div>
 
-            {/* 【修正處】: 將 user prop 傳遞給 Modal */}
             <PasswordModal isOpen={isPasswordModalOpen} onClose={() => setIsPasswordModalOpen(false)} user={user} />
             <TwoFactorAuthModal isOpen={is2faModalOpen} onClose={() => setIs2faModalOpen(false)} user={user} />
         </div>
@@ -223,7 +221,7 @@ function Profile({ user, userData, appId }) {
 }
 
 // --- 密碼設定 Modal 元件 ---
-function PasswordModal({ isOpen, onClose, user }) { // 【修正處】: 接收 user prop
+function PasswordModal({ isOpen, onClose, user }) {
     const [newPassword, setNewPassword] = useState('');
     const [confirmPassword, setConfirmPassword] = useState('');
     const [error, setError] = useState('');
@@ -242,7 +240,7 @@ function PasswordModal({ isOpen, onClose, user }) { // 【修正處】: 接收 u
         }
         setIsLoading(true);
         try {
-            await updatePassword(user, newPassword); // 【修正處】: 使用傳入的 user prop
+            await updatePassword(user, newPassword);
             alert("密碼已成功更新！");
             onClose();
         } catch (error) {
@@ -282,7 +280,7 @@ function PasswordModal({ isOpen, onClose, user }) { // 【修正處】: 接收 u
 }
 
 // --- 2FA 設定 Modal 元件 ---
-function TwoFactorAuthModal({ isOpen, onClose, user }) { // 【修正處】: 接收 user prop
+function TwoFactorAuthModal({ isOpen, onClose, user }) {
     const [secret, setSecret] = useState(null);
     const [qrCodeUrl, setQrCodeUrl] = useState('');
     const [verificationCode, setVerificationCode] = useState('');
@@ -290,10 +288,10 @@ function TwoFactorAuthModal({ isOpen, onClose, user }) { // 【修正處】: 接
     const [isLoading, setIsLoading] = useState(false);
 
     useEffect(() => {
-        if (isOpen && user) { // 加上 user 的檢查
+        if (isOpen && user) {
             const generateTfaSecret = async () => {
                 try {
-                    const multiFactorSession = await multiFactor(user).getSession(); // 【修正處】: 使用 user prop
+                    const multiFactorSession = await multiFactor(user).getSession();
                     const tfaSecret = await TotpMultiFactorGenerator.generateSecret(multiFactorSession);
                     setSecret(tfaSecret);
                     
@@ -311,7 +309,7 @@ function TwoFactorAuthModal({ isOpen, onClose, user }) { // 【修正處】: 接
             setVerificationCode('');
             setError('');
         }
-    }, [isOpen, user]); // 將 user 加入依賴
+    }, [isOpen, user]);
 
     const handleSubmit = async (e) => {
         e.preventDefault();
@@ -324,7 +322,7 @@ function TwoFactorAuthModal({ isOpen, onClose, user }) { // 【修正處】: 接
 
         try {
             const multiFactorAssertion = TotpMultiFactorGenerator.assertionForEnrollment(secret, verificationCode);
-            await multiFactor(user).enroll(multiFactorAssertion, '我的手機驗證器'); // 【修正處】: 使用 user prop
+            await multiFactor(user).enroll(multiFactorAssertion, '我的手機驗證器');
             alert("兩步驟驗證已成功啟用！");
             window.location.reload();
         } catch (error) {
