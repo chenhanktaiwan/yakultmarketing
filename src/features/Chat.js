@@ -61,34 +61,63 @@ const LinkPreview = ({ url }) => {
     );
 };
 
-// --- 【全新修正】: 只負責將文字中的網址變成連結的元件 ---
-const LinkifyText = ({ text }) => {
+// --- 【全新修正】: 訊息顯示元件 ---
+const MessageRenderer = ({ text }) => {
     if (typeof text !== 'string' || !text) {
         return null;
     }
+
     const urlRegex = /(\b(https?|ftp|file):\/\/[-A-Z0-9+&@#\/%?=~_|!:,.;]*[-A-Z0-9+&@#\/%=~_|])/ig;
-    const parts = text.split(urlRegex);
+    const parts = [];
+    let lastIndex = 0;
+    let match;
+    let firstUrl = null;
+
+    // 找出第一個網址，用於預覽
+    const firstMatch = text.match(urlRegex);
+    if (firstMatch) {
+        firstUrl = firstMatch[0];
+    }
+    
+    // 重新建立一個正規表示式實例，以確保 exec 的狀態正確
+    const execRegex = new RegExp(urlRegex.source, "ig");
+
+    // 使用迴圈來找出所有匹配的網址
+    while ((match = execRegex.exec(text)) !== null) {
+        // 將網址前的文字加入結果
+        if (match.index > lastIndex) {
+            parts.push(text.substring(lastIndex, match.index));
+        }
+        
+        const url = match[0];
+        // 將網址轉換成可點擊的連結元件
+        parts.push(
+            <a
+                key={match.index}
+                href={url}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="text-blue-600 hover:text-blue-800 underline"
+                onClick={(e) => e.stopPropagation()}
+            >
+                {url}
+            </a>
+        );
+        
+        lastIndex = execRegex.lastIndex;
+    }
+
+    // 將最後一個網址後的文字加入結果
+    if (lastIndex < text.length) {
+        parts.push(text.substring(lastIndex));
+    }
 
     return (
-        <>
-            {parts.map((part, index) => {
-                if (part && part.match(urlRegex)) {
-                    return (
-                        <a
-                            key={index}
-                            href={part}
-                            target="_blank"
-                            rel="noopener noreferrer"
-                            className="text-blue-600 hover:text-blue-800 underline"
-                            onClick={(e) => e.stopPropagation()}
-                        >
-                            {part}
-                        </a>
-                    );
-                }
-                return <span key={index}>{part}</span>;
-            })}
-        </>
+        <div>
+            {parts.map((part, index) => <React.Fragment key={index}>{part}</React.Fragment>)}
+            {/* 只為第一則網址顯示預覽 */}
+            {firstUrl && <LinkPreview url={firstUrl} />}
+        </div>
     );
 };
 
@@ -276,26 +305,16 @@ function Chat({ user, appId }) {
                         </div>
                         <div className="flex-grow p-6 overflow-y-auto bg-gray-50">
                             <div className="space-y-4">
-                                {messages.map(msg => {
-                                    // 【全新修正】: 在這裡找出第一個網址
-                                    const urlRegex = /(\b(https?|ftp|file):\/\/[-A-Z0-9+&@#\/%?=~_|!:,.;]*[-A-Z0-9+&@#\/%=~_|])/ig;
-                                    const firstUrl = msg.text?.match(urlRegex)?.[0];
-
-                                    return (
-                                        <div key={msg.id} className={`flex items-end gap-3 ${msg.senderId === user.uid ? 'justify-end' : 'justify-start'}`}>
-                                            {msg.senderId !== user.uid && ( <img src={msg.senderPhotoURL || `https://placehold.co/40x40/5F828B/FFFFFF?text=${msg.senderName ? msg.senderName[0] : '?'}`} alt="sender" className="w-8 h-8 rounded-full" /> )}
-                                            <div className={`max-w-xs lg:max-w-md px-4 py-2 rounded-xl ${msg.senderId === user.uid ? 'bg-[#5F828B] text-white' : 'bg-white shadow-sm'}`}>
-                                                <div className="text-sm break-words">
-                                                    <LinkifyText text={msg.text} />
-                                                    {/* 【全新修正】: 如果有找到網址，就顯示預覽元件 */}
-                                                    {firstUrl && <LinkPreview url={firstUrl} />}
-                                                </div>
-                                                <p className={`text-xs mt-1 text-right ${msg.senderId === user.uid ? 'text-gray-300' : 'text-gray-500'}`}>{msg.timestamp ? new Date(msg.timestamp.seconds * 1000).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'}) : ''}</p>
-                                            </div>
-                                             {msg.senderId === user.uid && ( <img src={user.photoURL || `https://placehold.co/40x40/5F828B/FFFFFF?text=${user.displayName[0]}`} alt="sender" className="w-8 h-8 rounded-full" /> )}
+                                {messages.map(msg => (
+                                    <div key={msg.id} className={`flex items-end gap-3 ${msg.senderId === user.uid ? 'justify-end' : 'justify-start'}`}>
+                                        {msg.senderId !== user.uid && ( <img src={msg.senderPhotoURL || `https://placehold.co/40x40/5F828B/FFFFFF?text=${msg.senderName ? msg.senderName[0] : '?'}`} alt="sender" className="w-8 h-8 rounded-full" /> )}
+                                        <div className={`max-w-xs lg:max-w-md px-4 py-2 rounded-xl ${msg.senderId === user.uid ? 'bg-[#5F828B] text-white' : 'bg-white shadow-sm'}`}>
+                                            <div className="text-sm break-words"><MessageRenderer text={msg.text} /></div>
+                                            <p className={`text-xs mt-1 text-right ${msg.senderId === user.uid ? 'text-gray-300' : 'text-gray-500'}`}>{msg.timestamp ? new Date(msg.timestamp.seconds * 1000).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'}) : ''}</p>
                                         </div>
-                                    );
-                                })}
+                                         {msg.senderId === user.uid && ( <img src={user.photoURL || `https://placehold.co/40x40/5F828B/FFFFFF?text=${user.displayName[0]}`} alt="sender" className="w-8 h-8 rounded-full" /> )}
+                                    </div>
+                                ))}
                             </div>
                             <div ref={messagesEndRef} />
                         </div>
