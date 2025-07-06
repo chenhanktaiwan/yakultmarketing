@@ -3,9 +3,8 @@ import {
     updateProfile, 
     updatePassword, 
     multiFactor,
-    TotpMultiFactorGenerator,
-    GoogleAuthProvider, // 【修正處】: 匯入 Google 登入工具
-    reauthenticateWithPopup // 【修正處】: 匯入彈出視窗驗證工具
+    PhoneAuthProvider, // 【修正處】: 改用手機驗證工具
+    PhoneMultiFactorGenerator // 【修正處】: 改用手機驗證工具
 } from 'firebase/auth';
 import { doc, updateDoc, collection, onSnapshot, deleteDoc } from 'firebase/firestore';
 import { auth, db } from '../firebase/config';
@@ -196,7 +195,7 @@ function Profile({ user, userData, appId }) {
                         </div>
                          <div className="p-4 border border-gray-200 rounded-lg">
                             <div className="flex items-center gap-3"><Icon name="shield-check" className="text-gray-500" /><h4 className="font-semibold text-gray-800">兩步驟驗證 (2FA)</h4></div>
-                            <p className="text-sm text-gray-600 mt-2 mb-3">使用驗證器 App 掃描 QR Code，大幅提升帳號安全性。</p>
+                            <p className="text-sm text-gray-600 mt-2 mb-3">透過手機簡訊驗證碼，大幅提升帳號安全性。</p>
                             {is2faEnabled ? (
                                 <button onClick={handleDisable2FA} className="w-full bg-red-500 text-white px-4 py-2 rounded-lg hover:bg-red-600">停用 2FA</button>
                             ) : (
@@ -208,7 +207,7 @@ function Profile({ user, userData, appId }) {
             </div>
 
             <PasswordModal isOpen={isPasswordModalOpen} onClose={() => setIsPasswordModalOpen(false)} user={user} />
-            <TwoFactorAuthModal isOpen={is2faModalOpen} onClose={() => setIs2faModalOpen(false)} user={user} />
+            <Sms2faModal isOpen={is2faModalOpen} onClose={() => setIs2faModalOpen(false)} user={user} />
         </div>
     );
 }
@@ -272,67 +271,72 @@ function PasswordModal({ isOpen, onClose, user }) {
     );
 }
 
-// --- 2FA 設定 Modal 元件 ---
-function TwoFactorAuthModal({ isOpen, onClose, user }) {
-    const [secret, setSecret] = useState(null);
-    const [qrCodeUrl, setQrCodeUrl] = useState('');
+// --- 【全新功能】: SMS 簡訊 2FA 設定 Modal 元件 ---
+function Sms2faModal({ isOpen, onClose, user }) {
+    const [phoneNumber, setPhoneNumber] = useState('');
     const [verificationCode, setVerificationCode] = useState('');
+    const [verificationId, setVerificationId] = useState(null);
     const [error, setError] = useState('');
     const [isLoading, setIsLoading] = useState(false);
+    const recaptchaVerifierRef = useRef(null);
 
+    // 當 Modal 開啟時，初始化 reCAPTCHA
     useEffect(() => {
-        if (isOpen && user) {
-            const reauthAndGenerate = async () => {
-                try {
-                    // 【修正處】: 在產生 QR Code 之前，先要求使用者重新驗證
-                    const provider = new GoogleAuthProvider();
-                    await reauthenticateWithPopup(user, provider);
-
-                    // 驗證成功後，才繼續產生 QR Code
-                    const multiFactorSession = await multiFactor(user).getSession();
-                    const tfaSecret = await TotpMultiFactorGenerator.generateSecret(multiFactorSession);
-                    setSecret(tfaSecret);
-                    
-                    const otpauthUri = `otpauth://totp/YakultWorkstation:${user.email}?secret=${tfaSecret.secretKey}&issuer=YakultWorkstation`;
-                    setQrCodeUrl(`https://api.qrserver.com/v1/create-qr-code/?size=200x200&data=${encodeURIComponent(otpauthUri)}`);
-                
-                } catch (error) {
-                    console.error("2FA 設定失敗:", error);
-                    // 如果使用者關閉彈出視窗，就關閉 Modal
-                    if (error.code === 'auth/popup-closed-by-user') {
-                        setError("您取消了驗證程序。");
-                        onClose();
-                    } else {
-                        setError("無法完成使用者驗證，請稍後再試。");
+        if (isOpen) {
+            // 確保只初始化一次
+            if (!recaptchaVerifierRef.current) {
+                // Firebase 要求一個可見的 reCAPTCHA 容器
+                recaptchaVerifierRef.current = new auth.RecaptchaVerifier('recaptcha-container', {
+                    'size': 'invisible',
+                    'callback': (response) => {
+                        // reCAPTCHA 驗證成功
+                        console.log("reCAPTCHA solved");
                     }
-                }
-            };
-            reauthAndGenerate();
-        } else {
-            // 重置狀態
-            setSecret(null);
-            setQrCodeUrl('');
-            setVerificationCode('');
-            setError('');
+                });
+            }
         }
-    }, [isOpen, user, onClose]); // 【修正處】: 將 onClose 加入依賴
+    }, [isOpen]);
 
-    const handleSubmit = async (e) => {
-        e.preventDefault();
+    const handleSendCode = async () => {
+        setError('');
+        if (!/^\+[1-9]\d{1,14}$/.test(phoneNumber)) {
+            setError("請輸入包含國碼的有效手機號碼 (例如: +886912345678)。");
+            return;
+        }
+        setIsLoading(true);
+        try {
+            const multiFactorSession = await multiFactor(user).getSession();
+            const phoneInfoOptions = {
+                phoneNumber: phoneNumber,
+                session: multiFactorSession
+            };
+            const phoneAuthProvider = new PhoneAuthProvider(auth);
+            const verId = await phoneAuthProvider.verifyPhoneNumber(phoneInfoOptions, recaptchaVerifierRef.current);
+            setVerificationId(verId);
+            alert("驗證碼已發送！");
+        } catch (error) {
+            console.error("發送簡訊失敗:", error);
+            setError(`發送簡訊失敗: ${error.message}`);
+        } finally {
+            setIsLoading(false);
+        }
+    };
+
+    const handleVerifyCode = async () => {
         setError('');
         if (verificationCode.length !== 6) {
             setError("請輸入 6 位數的驗證碼。");
             return;
         }
         setIsLoading(true);
-
         try {
-            const multiFactorAssertion = TotpMultiFactorGenerator.assertionForEnrollment(secret, verificationCode);
-            await multiFactor(user).enroll(multiFactorAssertion, '我的手機驗證器');
+            const cred = PhoneAuthProvider.credential(verificationId, verificationCode);
+            const multiFactorAssertion = PhoneMultiFactorGenerator.assertion(cred);
+            await multiFactor(user).enroll(multiFactorAssertion, `手機 (${phoneNumber})`);
             alert("兩步驟驗證已成功啟用！");
             window.location.reload();
         } catch (error) {
-            console.error("啟用 2FA 失敗:", error);
+            console.error("驗證碼驗證失敗:", error);
             setError("驗證碼錯誤或已過期，請再試一次。");
         } finally {
             setIsLoading(false);
@@ -340,18 +344,39 @@ function TwoFactorAuthModal({ isOpen, onClose, user }) {
     };
 
     return (
-        <Modal isOpen={isOpen} onClose={onClose} title="啟用兩步驟驗證 (2FA)">
-            <div className="text-center">
-                <p className="mb-4">請使用您的驗證器 App (如 Google Authenticator) 掃描下方的 QR Code。</p>
-                {qrCodeUrl ? (
-                    <img src={qrCodeUrl} alt="2FA QR Code" className="mx-auto border rounded-lg" />
-                ) : (
-                    <p>正在等待使用者驗證身份...</p>
-                )}
-                <p className="mt-4 mb-2 text-sm text-gray-600">掃描後，在下方輸入 App 顯示的 6 位數驗證碼以完成設定。</p>
-                <form onSubmit={handleSubmit}>
+        <Modal isOpen={isOpen} onClose={onClose} title="啟用兩步驟驗證 (SMS)">
+            {/* 這個隱藏的 div 是 reCAPTCHA 必要容器 */}
+            <div id="recaptcha-container"></div>
+
+            {!verificationId ? (
+                // 步驟一: 輸入手機號碼
+                <div>
+                    <p className="mb-4">請輸入您的手機號碼以接收簡訊驗證碼。請務必包含國碼。</p>
+                    <label className="block text-gray-700 text-sm font-bold mb-2" htmlFor="phone-number">手機號碼</label>
                     <input 
-                        type="text" 
+                        id="phone-number"
+                        type="tel"
+                        value={phoneNumber}
+                        onChange={(e) => setPhoneNumber(e.target.value)}
+                        placeholder="+886912345678"
+                        className="shadow appearance-none border rounded w-full py-2 px-3"
+                    />
+                    {error && <p className="text-red-500 text-sm mt-4">{error}</p>}
+                    <div className="flex justify-end gap-3 mt-6">
+                        <button type="button" onClick={onClose} className="bg-gray-200 text-gray-800 px-4 py-2 rounded-lg hover:bg-gray-300">取消</button>
+                        <button onClick={handleSendCode} className="bg-blue-500 text-white px-4 py-2 rounded-lg hover:bg-blue-600" disabled={isLoading}>
+                            {isLoading ? '發送中...' : '發送驗證碼'}
+                        </button>
+                    </div>
+                </div>
+            ) : (
+                // 步驟二: 輸入驗證碼
+                <div>
+                    <p className="mb-4">我們已將 6 位數驗證碼發送到 <span className="font-semibold">{phoneNumber}</span>。請在下方輸入以完成設定。</p>
+                    <label className="block text-gray-700 text-sm font-bold mb-2" htmlFor="verification-code">驗證碼</label>
+                    <input 
+                        id="verification-code"
+                        type="text"
                         value={verificationCode}
                         onChange={(e) => setVerificationCode(e.target.value)}
                         placeholder="123456"
@@ -360,13 +385,13 @@ function TwoFactorAuthModal({ isOpen, onClose, user }) {
                     />
                     {error && <p className="text-red-500 text-sm mt-4">{error}</p>}
                     <div className="flex justify-end gap-3 mt-6">
-                        <button type="button" onClick={onClose} className="bg-gray-200 text-gray-800 px-4 py-2 rounded-lg hover:bg-gray-300">取消</button>
-                        <button type="submit" className="bg-green-500 text-white px-4 py-2 rounded-lg hover:bg-green-600" disabled={isLoading || !qrCodeUrl}>
+                        <button type="button" onClick={() => setVerificationId(null)} className="bg-gray-200 text-gray-800 px-4 py-2 rounded-lg hover:bg-gray-300">返回</button>
+                        <button onClick={handleVerifyCode} className="bg-green-500 text-white px-4 py-2 rounded-lg hover:bg-green-600" disabled={isLoading}>
                             {isLoading ? '驗證中...' : '驗證並啟用'}
                         </button>
                     </div>
-                </form>
-            </div>
+                </div>
+            )}
         </Modal>
     );
 }
