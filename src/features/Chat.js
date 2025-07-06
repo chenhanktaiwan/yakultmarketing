@@ -63,62 +63,60 @@ const LinkPreview = ({ url }) => {
 
 // --- 【全新修正】: 訊息顯示元件 ---
 const MessageRenderer = ({ text }) => {
-    if (typeof text !== 'string' || !text) {
-        return null;
-    }
-
-    const urlRegex = /(\b(https?|ftp|file):\/\/[-A-Z0-9+&@#\/%?=~_|!:,.;]*[-A-Z0-9+&@#\/%=~_|])/ig;
-    const parts = [];
-    let lastIndex = 0;
-    let match;
-    let firstUrl = null;
-
-    // 找出第一個網址，用於預覽
-    const firstMatch = text.match(urlRegex);
-    if (firstMatch) {
-        firstUrl = firstMatch[0];
-    }
-    
-    // 重新建立一個正規表示式實例，以確保 exec 的狀態正確
-    const execRegex = new RegExp(urlRegex.source, "ig");
-
-    // 使用迴圈來找出所有匹配的網址
-    while ((match = execRegex.exec(text)) !== null) {
-        // 將網址前的文字加入結果
-        if (match.index > lastIndex) {
-            parts.push(text.substring(lastIndex, match.index));
+    // 使用 React.useMemo 來記憶計算結果，避免不必要的重複渲染
+    const content = React.useMemo(() => {
+        if (typeof text !== 'string' || !text) {
+            return null;
         }
+
+        const urlRegex = /(\b(https?|ftp|file):\/\/[-A-Z0-9+&@#\/%?=~_|!:,.;]*[-A-Z0-9+&@#\/%=~_|])/ig;
+        const parts = [];
+        let lastIndex = 0;
+        let match;
+
+        // 找出第一個網址，用於預覽
+        const firstUrlMatch = text.match(urlRegex);
+        const firstUrl = firstUrlMatch ? firstUrlMatch[0] : null;
+
+        // 重新建立一個正規表示式實例，以確保 exec 的狀態正確
+        const loopRegex = new RegExp(urlRegex.source, 'ig');
         
-        const url = match[0];
-        // 將網址轉換成可點擊的連結元件
-        parts.push(
-            <a
-                key={match.index}
-                href={url}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="text-blue-600 hover:text-blue-800 underline"
-                onClick={(e) => e.stopPropagation()}
-            >
-                {url}
-            </a>
+        // 迴圈找出所有網址
+        while ((match = loopRegex.exec(text)) !== null) {
+            // 將網址前的文字加入
+            if (match.index > lastIndex) {
+                parts.push(<span key={`text-${lastIndex}`}>{text.substring(lastIndex, match.index)}</span>);
+            }
+            // 將網址轉換成連結
+            parts.push(
+                <a
+                    key={`link-${match.index}`}
+                    href={match[0]}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="text-blue-600 hover:text-blue-800 underline"
+                    onClick={(e) => e.stopPropagation()}
+                >
+                    {match[0]}
+                </a>
+            );
+            lastIndex = loopRegex.lastIndex;
+        }
+
+        // 加入最後剩下的文字
+        if (lastIndex < text.length) {
+            parts.push(<span key={`text-${lastIndex}`}>{text.substring(lastIndex)}</span>);
+        }
+
+        return (
+            <div>
+                {parts}
+                {firstUrl && <LinkPreview url={firstUrl} />}
+            </div>
         );
-        
-        lastIndex = execRegex.lastIndex;
-    }
+    }, [text]);
 
-    // 將最後一個網址後的文字加入結果
-    if (lastIndex < text.length) {
-        parts.push(text.substring(lastIndex));
-    }
-
-    return (
-        <div>
-            {parts.map((part, index) => <React.Fragment key={index}>{part}</React.Fragment>)}
-            {/* 只為第一則網址顯示預覽 */}
-            {firstUrl && <LinkPreview url={firstUrl} />}
-        </div>
-    );
+    return content;
 };
 
 
