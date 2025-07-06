@@ -15,27 +15,25 @@ import Modal from '../components/Modal';
 // --- 主要 Profile 元件 ---
 function Profile({ user, userData, appId }) {
     
-    // 【最終修正】: 將所有 Hooks (useState, useEffect 等) 都移到元件的最頂部，確保它們總是被呼叫。
-    // 個人資料編輯狀態
+    // 【最終修正】: 將 Cloudinary 設定加回來
+    const CLOUDINARY_CLOUD_NAME = process.env.REACT_APP_CLOUDINARY_CLOUD_NAME;
+    const CLOUDINARY_UPLOAD_PRESET = process.env.REACT_APP_CLOUDINARY_UPLOAD_PRESET;
+
+    // 將所有 Hooks (useState, useEffect 等) 都移到元件的最頂部，確保它們總是被呼叫。
     const [displayName, setDisplayName] = useState(userData?.displayName || '');
     const [personalInfo, setPersonalInfo] = useState(userData?.personalInfo || '');
     const [photo, setPhoto] = useState(null);
     const [photoURL, setPhotoURL] = useState(userData?.photoURL || '');
     const [isUploading, setIsUploading] = useState(false);
     const fileInputRef = useRef(null);
-
-    // 團隊成員列表狀態
     const [allUsers, setAllUsers] = useState([]);
-
-    // 安全性 Modal 的開關狀態
     const [isPasswordModalOpen, setIsPasswordModalOpen] = useState(false);
     const [is2faModalOpen, setIs2faModalOpen] = useState(false);
     
     const is2faEnabled = user && user.multiFactor && user.multiFactor.enrolledFactors && user.multiFactor.enrolledFactors.length > 0;
 
-    // 取得所有團隊成員的資料
     useEffect(() => {
-        if (!appId) return; // 增加保護
+        if (!appId) return;
         const usersRef = collection(db, "artifacts", appId, "users");
         const unsubscribe = onSnapshot(usersRef, (snapshot) => {
             const userList = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
@@ -44,7 +42,7 @@ function Profile({ user, userData, appId }) {
         return () => unsubscribe();
     }, [appId]);
 
-    // 【最終修正】: 將這個保護機制移到所有 Hooks 之後。
+    // 將這個保護機制移到所有 Hooks 之後。
     if (!user || !userData) {
         return <div className="text-center p-8">正在載入成員資料...</div>;
     }
