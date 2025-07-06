@@ -10,31 +10,36 @@ import {
 import { doc, updateDoc, collection, onSnapshot, deleteDoc } from 'firebase/firestore';
 import { auth, db } from '../firebase/config';
 import Icon from '../components/Icon';
-import Modal from '../components/Modal'; // 我們需要 Modal 元件
+import Modal from '../components/Modal';
 
 // --- 主要 Profile 元件 ---
 function Profile({ user, userData, appId }) {
+    // 【修正處】: 新增一個保護機制，如果核心資料還沒載入，就先顯示讀取中畫面。
+    if (!user || !userData) {
+        return <div className="text-center p-8">正在載入成員資料...</div>;
+    }
+
     // --- Cloudinary Settings ---
     const CLOUDINARY_CLOUD_NAME = process.env.REACT_APP_CLOUDINARY_CLOUD_NAME;
     const CLOUDINARY_UPLOAD_PRESET = process.env.REACT_APP_CLOUDINARY_UPLOAD_PRESET;
     
-    // 個人資料編輯狀態
-    const [displayName, setDisplayName] = useState(userData.displayName);
-    const [personalInfo, setPersonalInfo] = useState(userData.personalInfo);
+    // 個人資料編輯狀態 (加上 || '' 保護，避免初始值為 undefined)
+    const [displayName, setDisplayName] = useState(userData.displayName || '');
+    const [personalInfo, setPersonalInfo] = useState(userData.personalInfo || '');
     const [photo, setPhoto] = useState(null);
-    const [photoURL, setPhotoURL] = useState(userData.photoURL);
+    const [photoURL, setPhotoURL] = useState(userData.photoURL || '');
     const [isUploading, setIsUploading] = useState(false);
     const fileInputRef = useRef(null);
 
     // 團隊成員列表狀態
     const [allUsers, setAllUsers] = useState([]);
 
-    // 【新增功能】: 安全性 Modal 的開關狀態
+    // 安全性 Modal 的開關狀態
     const [isPasswordModalOpen, setIsPasswordModalOpen] = useState(false);
     const [is2faModalOpen, setIs2faModalOpen] = useState(false);
     
-    // 【新增功能】: 檢查使用者是否已啟用 2FA
-    const is2faEnabled = auth.currentUser.multiFactor.enrolledFactors.length > 0;
+    // 【修正處】: 改用更安全的 `user` prop 來檢查，並加上可選串連 (?.)
+    const is2faEnabled = user.multiFactor?.enrolledFactors.length > 0;
 
     // 取得所有團隊成員的資料
     useEffect(() => {
@@ -58,7 +63,6 @@ function Profile({ user, userData, appId }) {
         }
     };
     
-    // 更新個人資料 (邏輯不變)
     const handleUpdateProfile = async () => {
         if (!CLOUDINARY_CLOUD_NAME) {
             alert("Cloudinary 設定未載入，請檢查環境變數！");
@@ -71,7 +75,6 @@ function Profile({ user, userData, appId }) {
             const formData = new FormData();
             formData.append('file', photo);
             formData.append('upload_preset', CLOUDINARY_UPLOAD_PRESET);
-
             try {
                 const response = await fetch(`https://api.cloudinary.com/v1_1/${CLOUDINARY_CLOUD_NAME}/image/upload`, { method: 'POST', body: formData });
                 const data = await response.json();
@@ -86,7 +89,7 @@ function Profile({ user, userData, appId }) {
         }
 
         try {
-            await updateProfile(auth.currentUser, { displayName, photoURL: newPhotoURL });
+            await updateProfile(user, { displayName, photoURL: newPhotoURL });
             const userDocRef = doc(db, "artifacts", appId, "users", user.uid);
             await updateDoc(userDocRef, { displayName, personalInfo, photoURL: newPhotoURL });
             alert("個人資料已更新！");
@@ -98,7 +101,6 @@ function Profile({ user, userData, appId }) {
         }
     };
 
-    // 團隊管理功能 (邏輯不變)
     const handleRoleChange = async (targetUserId, newRole) => {
         if (!window.confirm(`確定要將這位成員的角色變更為 ${newRole ? '管理員' : '一般成員'} 嗎？`)) return;
         const userDocRef = doc(db, "artifacts", appId, "users", targetUserId);
@@ -110,6 +112,7 @@ function Profile({ user, userData, appId }) {
             alert("變更角色時發生錯誤。");
         }
     };
+    
     const handleRemoveUser = async (targetUserId, targetUserName) => {
         if (!window.confirm(`警告：您即將從團隊中永久移除成員「${targetUserName}」。此操作無法復原，確定要繼續嗎？`)) return;
         const userDocRef = doc(db, "artifacts", appId, "users", targetUserId);
@@ -122,16 +125,14 @@ function Profile({ user, userData, appId }) {
         }
     };
 
-    // 【新增功能】: 停用 2FA
     const handleDisable2FA = async () => {
         if (!window.confirm("確定要停用兩步驟驗證嗎？這會降低您帳號的安全性。")) return;
         try {
-            const multiFactorUser = multiFactor(auth.currentUser);
-            // 假設使用者只有一個 TOTP 驗證器
+            const multiFactorUser = multiFactor(user);
             const factorId = multiFactorUser.enrolledFactors[0].uid;
             await multiFactorUser.unenroll(factorId);
             alert("兩步驟驗證已成功停用。");
-            window.location.reload(); // 重新整理頁面以更新狀態
+            window.location.reload();
         } catch (error) {
             console.error("停用 2FA 失敗:", error);
             alert(`停用 2FA 時發生錯誤: ${error.message}`);
@@ -193,7 +194,6 @@ function Profile({ user, userData, appId }) {
                     <div className="mt-8 text-right"><button onClick={handleUpdateProfile} disabled={isUploading} className="bg-[#5F828B] text-white px-5 py-2 rounded-lg shadow hover:bg-[#4A666F] transition-colors disabled:bg-gray-400">{isUploading ? '更新中...' : '儲存變更'}</button></div>
                 </div>
                 
-                {/* 【修改功能】: 安全性設定區塊現在是可互動的 */}
                 <div className="bg-white p-8 rounded-lg shadow-sm border border-gray-200">
                     <h3 className="text-xl font-semibold text-[#4A666F] mb-6">安全性設定</h3>
                     <div className="space-y-6">
@@ -215,17 +215,15 @@ function Profile({ user, userData, appId }) {
                 </div>
             </div>
 
-            {/* 【新增功能】: 密碼設定 Modal */}
-            <PasswordModal isOpen={isPasswordModalOpen} onClose={() => setIsPasswordModalOpen(false)} />
-
-            {/* 【新增功能】: 2FA 設定 Modal */}
-            <TwoFactorAuthModal isOpen={is2faModalOpen} onClose={() => setIs2faModalOpen(false)} />
+            {/* 【修正處】: 將 user prop 傳遞給 Modal */}
+            <PasswordModal isOpen={isPasswordModalOpen} onClose={() => setIsPasswordModalOpen(false)} user={user} />
+            <TwoFactorAuthModal isOpen={is2faModalOpen} onClose={() => setIs2faModalOpen(false)} user={user} />
         </div>
     );
 }
 
-// --- 【新增功能】: 密碼設定 Modal 元件 ---
-function PasswordModal({ isOpen, onClose }) {
+// --- 密碼設定 Modal 元件 ---
+function PasswordModal({ isOpen, onClose, user }) { // 【修正處】: 接收 user prop
     const [newPassword, setNewPassword] = useState('');
     const [confirmPassword, setConfirmPassword] = useState('');
     const [error, setError] = useState('');
@@ -244,7 +242,7 @@ function PasswordModal({ isOpen, onClose }) {
         }
         setIsLoading(true);
         try {
-            await updatePassword(auth.currentUser, newPassword);
+            await updatePassword(user, newPassword); // 【修正處】: 使用傳入的 user prop
             alert("密碼已成功更新！");
             onClose();
         } catch (error) {
@@ -283,25 +281,23 @@ function PasswordModal({ isOpen, onClose }) {
     );
 }
 
-// --- 【新增功能】: 2FA 設定 Modal 元件 ---
-function TwoFactorAuthModal({ isOpen, onClose }) {
+// --- 2FA 設定 Modal 元件 ---
+function TwoFactorAuthModal({ isOpen, onClose, user }) { // 【修正處】: 接收 user prop
     const [secret, setSecret] = useState(null);
     const [qrCodeUrl, setQrCodeUrl] = useState('');
     const [verificationCode, setVerificationCode] = useState('');
-    const [verificationId, setVerificationId] = useState('');
     const [error, setError] = useState('');
     const [isLoading, setIsLoading] = useState(false);
 
     useEffect(() => {
-        if (isOpen) {
-            // 當 Modal 開啟時，產生一個新的 2FA secret
+        if (isOpen && user) { // 加上 user 的檢查
             const generateTfaSecret = async () => {
                 try {
-                    const multiFactorSession = await multiFactor(auth.currentUser).getSession();
+                    const multiFactorSession = await multiFactor(user).getSession(); // 【修正處】: 使用 user prop
                     const tfaSecret = await TotpMultiFactorGenerator.generateSecret(multiFactorSession);
                     setSecret(tfaSecret);
                     
-                    const otpauthUri = `otpauth://totp/YakultWorkstation:${auth.currentUser.email}?secret=${tfaSecret.secretKey}&issuer=YakultWorkstation`;
+                    const otpauthUri = `otpauth://totp/YakultWorkstation:${user.email}?secret=${tfaSecret.secretKey}&issuer=YakultWorkstation`;
                     setQrCodeUrl(`https://api.qrserver.com/v1/create-qr-code/?size=200x200&data=${encodeURIComponent(otpauthUri)}`);
                 } catch (error) {
                     console.error("產生 2FA secret 失敗:", error);
@@ -310,14 +306,12 @@ function TwoFactorAuthModal({ isOpen, onClose }) {
             };
             generateTfaSecret();
         } else {
-            // 重置狀態
             setSecret(null);
             setQrCodeUrl('');
             setVerificationCode('');
-            setVerificationId('');
             setError('');
         }
-    }, [isOpen]);
+    }, [isOpen, user]); // 將 user 加入依賴
 
     const handleSubmit = async (e) => {
         e.preventDefault();
@@ -330,9 +324,9 @@ function TwoFactorAuthModal({ isOpen, onClose }) {
 
         try {
             const multiFactorAssertion = TotpMultiFactorGenerator.assertionForEnrollment(secret, verificationCode);
-            await multiFactor(auth.currentUser).enroll(multiFactorAssertion, '我的手機驗證器');
+            await multiFactor(user).enroll(multiFactorAssertion, '我的手機驗證器'); // 【修正處】: 使用 user prop
             alert("兩步驟驗證已成功啟用！");
-            window.location.reload(); // 重新整理頁面以更新狀態
+            window.location.reload();
         } catch (error) {
             console.error("啟用 2FA 失敗:", error);
             setError("驗證碼錯誤或已過期，請再試一次。");
