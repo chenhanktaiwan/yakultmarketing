@@ -3,59 +3,74 @@ import { db } from '../firebase/config';
 import { collection, query, onSnapshot, addDoc, doc, getDoc, setDoc, where, orderBy, serverTimestamp, updateDoc } from 'firebase/firestore';
 import Icon from '../components/Icon';
 
-// --- 【全新功能】: 連結預覽情報員 ---
-// 這個元件會接收一個網址，並去外部服務取得預覽資訊
+// --- 【全新修正】: 連結預覽情報員 ---
 const LinkPreview = ({ url }) => {
     const [preview, setPreview] = useState(null);
     const [isLoading, setIsLoading] = useState(true);
 
     useEffect(() => {
-        // 使用一個免費的代理服務來取得網址元數據，避免 CORS 問題
+        let isMounted = true; // 防止元件卸載後還在更新狀態
+        // 使用一個免費的代理服務來取得網址元數據
         fetch(`https://jsonlink.io/api/extractor?url=${encodeURIComponent(url)}`)
             .then(res => res.json())
             .then(data => {
-                if (data && data.title) {
+                if (isMounted && data && data.title) {
                     setPreview(data);
                 }
             })
             .catch(err => console.error("無法取得連結預覽:", err))
-            .finally(() => setIsLoading(false));
+            .finally(() => {
+                if (isMounted) {
+                    setIsLoading(false);
+                }
+            });
+        
+        return () => { isMounted = false; };
     }, [url]);
 
-    // 如果正在載入或沒有預覽資訊，就不顯示任何東西
-    if (isLoading || !preview) {
-        return null;
+    if (isLoading) {
+        return <div className="mt-2 text-xs text-gray-400">正在載入預覽...</div>;
+    }
+
+    if (!preview) {
+        return null; // 如果沒有預覽資訊，就不顯示任何東西
     }
 
     return (
-        <a href={url} target="_blank" rel="noopener noreferrer" className="mt-2 block bg-gray-100 hover:bg-gray-200 p-3 rounded-lg">
-            <div className="flex gap-3">
+        <a href={url} target="_blank" rel="noopener noreferrer" className="mt-2 block bg-gray-100 hover:bg-gray-200 p-2.5 rounded-lg border border-gray-200">
+            <div className="flex gap-3 items-center">
                 {preview.image && (
-                    <img src={preview.image} alt="Link preview" className="w-24 h-24 object-cover rounded-md flex-shrink-0" />
+                    <img src={preview.image} alt="Link preview" className="w-16 h-16 object-cover rounded-md flex-shrink-0 bg-gray-200" />
                 )}
                 <div className="flex flex-col justify-center overflow-hidden">
-                    <h4 className="font-bold text-sm text-gray-800 truncate">{preview.title}</h4>
-                    <p className="text-xs text-gray-600 mt-1 line-clamp-2">{preview.description}</p>
-                    <p className="text-xs text-gray-400 mt-2 truncate">{preview.domain}</p>
+                    <h4 className="font-semibold text-sm text-gray-800 truncate">{preview.title}</h4>
+                    <p className="text-xs text-gray-600 mt-1" style={{ display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', overflow: 'hidden' }}>
+                        {preview.description}
+                    </p>
+                    <p className="text-xs text-gray-400 mt-1 truncate">{preview.domain}</p>
                 </div>
             </div>
         </a>
     );
 };
 
-
-// --- 【升級功能】: 網址轉換小幫手，現在會包含連結預覽 ---
+// --- 【全新修正】: 訊息顯示元件 ---
 const MessageRenderer = ({ text }) => {
     if (typeof text !== 'string') {
         return <span>{text}</span>;
     }
+    // 這個正規表示式能更準確地找到網址
     const urlRegex = /(\b(https?|ftp|file):\/\/[-A-Z0-9+&@#\/%?=~_|!:,.;]*[-A-Z0-9+&@#\/%=~_|])/ig;
     const parts = text.split(urlRegex);
+    let firstUrlFound = false;
 
     return (
         <span>
             {parts.map((part, index) => {
                 if (part && part.match(urlRegex)) {
+                    const isFirstUrl = !firstUrlFound;
+                    if (isFirstUrl) firstUrlFound = true;
+                    
                     return (
                         <React.Fragment key={index}>
                             <a 
@@ -67,11 +82,16 @@ const MessageRenderer = ({ text }) => {
                             >
                                 {part}
                             </a>
-                            <LinkPreview url={part} />
+                            {/* 只為第一則網址顯示預覽 */}
+                            {isFirstUrl && <LinkPreview url={part} />}
                         </React.Fragment>
                     );
                 }
-                return <span key={index}>{part}</span>;
+                // 過濾掉因 split 產生的 undefined 或空字串
+                if (part) {
+                    return <span key={index}>{part}</span>;
+                }
+                return null;
             })}
         </span>
     );
@@ -265,8 +285,7 @@ function Chat({ user, appId }) {
                                     <div key={msg.id} className={`flex items-end gap-3 ${msg.senderId === user.uid ? 'justify-end' : 'justify-start'}`}>
                                         {msg.senderId !== user.uid && ( <img src={msg.senderPhotoURL || `https://placehold.co/40x40/5F828B/FFFFFF?text=${msg.senderName ? msg.senderName[0] : '?'}`} alt="sender" className="w-8 h-8 rounded-full" /> )}
                                         <div className={`max-w-xs lg:max-w-md px-4 py-2 rounded-xl ${msg.senderId === user.uid ? 'bg-[#5F828B] text-white' : 'bg-white shadow-sm'}`}>
-                                            {/* 【修改處】: 使用新的 MessageRenderer 元件來顯示訊息 */}
-                                            <p className="text-sm break-words"><MessageRenderer text={msg.text} /></p>
+                                            <div className="text-sm break-words"><MessageRenderer text={msg.text} /></div>
                                             <p className={`text-xs mt-1 text-right ${msg.senderId === user.uid ? 'text-gray-300' : 'text-gray-500'}`}>{msg.timestamp ? new Date(msg.timestamp.seconds * 1000).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'}) : ''}</p>
                                         </div>
                                          {msg.senderId === user.uid && ( <img src={user.photoURL || `https://placehold.co/40x40/5F828B/FFFFFF?text=${user.displayName[0]}`} alt="sender" className="w-8 h-8 rounded-full" /> )}
