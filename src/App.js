@@ -37,7 +37,7 @@ function App() {
                         photoURL: currentUser.photoURL || '',
                         personalInfo: '新成員',
                         isApproved: true,
-                        isAdmin: false, // 【修改處】: 新成員預設不是管理員
+                        isAdmin: false,
                         createdAt: serverTimestamp()
                     };
                     await setDoc(userDocRef, newUserProfile);
@@ -115,7 +115,8 @@ function MainApp({ user, userData, appId }) {
     return (
         <div className="h-screen w-screen bg-[#F0F3F4] flex flex-col font-sans">
             <header className="bg-white shadow-md w-full p-4 flex justify-between items-center z-10 sticky top-0">
-                <h1 className="text-2xl font-bold text-[#4A666F]">養樂多行銷工作站</h1>
+                {/* 【修改處】 */}
+                <h1 className="text-2xl font-bold text-[#4A666F]">養樂多行銷團隊工作站</h1>
                 <nav className="flex items-center space-x-6">
                     <NavItem icon="bell" label="最新公告" active={activeTab === 'announcements'} onClick={() => setActiveTab('announcements')} />
                     <NavItem icon="calendar" label="行事曆" active={activeTab === 'calendar'} onClick={() => setActiveTab('calendar')} />
