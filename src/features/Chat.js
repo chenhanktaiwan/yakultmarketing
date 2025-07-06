@@ -61,40 +61,50 @@ const MessageRenderer = ({ text }) => {
     }
     // 這個正規表示式能更準確地找到網址
     const urlRegex = /(\b(https?|ftp|file):\/\/[-A-Z0-9+&@#\/%?=~_|!:,.;]*[-A-Z0-9+&@#\/%=~_|])/ig;
-    const parts = text.split(urlRegex);
+    const parts = [];
+    let lastIndex = 0;
+    let match;
     let firstUrlFound = false;
 
-    return (
-        <span>
-            {parts.map((part, index) => {
-                if (part && part.match(urlRegex)) {
-                    const isFirstUrl = !firstUrlFound;
-                    if (isFirstUrl) firstUrlFound = true;
-                    
-                    return (
-                        <React.Fragment key={index}>
-                            <a 
-                                href={part} 
-                                target="_blank" 
-                                rel="noopener noreferrer"
-                                className="text-blue-600 hover:text-blue-800 underline"
-                                onClick={(e) => e.stopPropagation()}
-                            >
-                                {part}
-                            </a>
-                            {/* 只為第一則網址顯示預覽 */}
-                            {isFirstUrl && <LinkPreview url={part} />}
-                        </React.Fragment>
-                    );
-                }
-                // 過濾掉因 split 產生的 undefined 或空字串
-                if (part) {
-                    return <span key={index}>{part}</span>;
-                }
-                return null;
-            })}
-        </span>
-    );
+    // 使用迴圈來找出所有匹配的網址
+    while ((match = urlRegex.exec(text)) !== null) {
+        // 將網址前的文字加入結果
+        if (match.index > lastIndex) {
+            parts.push(text.substring(lastIndex, match.index));
+        }
+        
+        const url = match[0];
+        const isFirstUrl = !firstUrlFound;
+        if (isFirstUrl) {
+            firstUrlFound = true;
+        }
+
+        // 將網址轉換成可點擊的連結元件
+        parts.push(
+            <React.Fragment key={match.index}>
+                <a
+                    href={url}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="text-blue-600 hover:text-blue-800 underline"
+                    onClick={(e) => e.stopPropagation()}
+                >
+                    {url}
+                </a>
+                {/* 只為第一則網址顯示預覽 */}
+                {isFirstUrl && <LinkPreview url={url} />}
+            </React.Fragment>
+        );
+        
+        lastIndex = match.index + url.length;
+    }
+
+    // 將最後一個網址後的文字加入結果
+    if (lastIndex < text.length) {
+        parts.push(text.substring(lastIndex));
+    }
+
+    return <span>{parts}</span>;
 };
 
 
