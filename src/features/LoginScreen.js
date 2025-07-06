@@ -16,7 +16,8 @@ function LoginScreen() {
     return (
         <div className="flex flex-col items-center justify-center h-screen bg-[#F0F3F4]">
             <div className="text-center p-10 bg-white rounded-xl shadow-lg">
-                <h1 className="text-4xl font-bold text-[#4A666F] mb-2">養樂多行銷工作站</h1>
+                {/* 【修改處】 */}
+                <h1 className="text-4xl font-bold text-[#4A666F] mb-2">養樂多行銷團隊工作站</h1>
                 <p className="text-gray-600 mb-8">專業團隊的協作平台</p>
                 <button
                     onClick={handleGoogleLogin}
