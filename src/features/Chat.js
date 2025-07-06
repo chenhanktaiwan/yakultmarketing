@@ -3,30 +3,39 @@ import { db } from '../firebase/config';
 import { collection, query, onSnapshot, addDoc, doc, getDoc, setDoc, where, orderBy, serverTimestamp, updateDoc } from 'firebase/firestore';
 import Icon from '../components/Icon';
 
-// --- 【新增功能】: 網址轉換小幫手 ---
+// --- 【修正功能】: 網址轉換小幫手 ---
 // 這個元件會接收一段文字，並將其中的網址轉換成可點擊的 <a> 標籤
 const Linkify = ({ text }) => {
-    // 使用正規表示式來尋找網址
-    const urlRegex = /(https?:\/\/[^\s]+)/g;
+    // 檢查傳入的文字是否為有效的字串
+    if (typeof text !== 'string') {
+        return <span>{text}</span>;
+    }
+    // 使用一個常見且穩定的正規表示式來尋找網址
+    const urlRegex = /(\b(https?|ftp|file):\/\/[-A-Z0-9+&@#\/%?=~_|!:,.;]*[-A-Z0-9+&@#\/%=~_|])/ig;
     const parts = text.split(urlRegex);
 
     return (
         <span>
-            {parts.map((part, index) => 
-                urlRegex.test(part) ? (
-                    <a 
-                        key={index} 
-                        href={part} 
-                        target="_blank" 
-                        rel="noopener noreferrer"
-                        className="text-blue-500 hover:underline"
-                    >
-                        {part}
-                    </a>
-                ) : (
-                    <span key={index}>{part}</span>
-                )
-            )}
+            {parts.map((part, index) => {
+                // 檢查分割出來的部分是否為一個完整的網址
+                if (part && part.match(urlRegex)) {
+                    return (
+                        <a 
+                            key={index} 
+                            href={part} 
+                            target="_blank" 
+                            rel="noopener noreferrer"
+                            className="text-blue-600 hover:text-blue-800 underline"
+                            // 防止點擊連結時觸發父層的事件
+                            onClick={(e) => e.stopPropagation()}
+                        >
+                            {part}
+                        </a>
+                    );
+                }
+                // 如果不是網址，就當作一般文字顯示
+                return <span key={index}>{part}</span>;
+            })}
         </span>
     );
 };
@@ -234,7 +243,6 @@ function Chat({ user, appId }) {
                                     <div key={msg.id} className={`flex items-end gap-3 ${msg.senderId === user.uid ? 'justify-end' : 'justify-start'}`}>
                                         {msg.senderId !== user.uid && ( <img src={msg.senderPhotoURL || `https://placehold.co/40x40/5F828B/FFFFFF?text=${msg.senderName ? msg.senderName[0] : '?'}`} alt="sender" className="w-8 h-8 rounded-full" /> )}
                                         <div className={`max-w-xs lg:max-w-md px-4 py-2 rounded-xl ${msg.senderId === user.uid ? 'bg-[#5F828B] text-white' : 'bg-white shadow-sm'}`}>
-                                            {/* 【修改處】: 使用新的 Linkify 元件來顯示訊息 */}
                                             <p className="text-sm break-words"><Linkify text={msg.text} /></p>
                                             <p className={`text-xs mt-1 text-right ${msg.senderId === user.uid ? 'text-gray-300' : 'text-gray-500'}`}>{msg.timestamp ? new Date(msg.timestamp.seconds * 1000).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'}) : ''}</p>
                                         </div>
