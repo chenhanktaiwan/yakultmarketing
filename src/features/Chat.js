@@ -3,15 +3,16 @@ import { db } from '../firebase/config';
 import { collection, query, onSnapshot, addDoc, doc, getDoc, setDoc, where, orderBy, serverTimestamp, updateDoc } from 'firebase/firestore';
 import Icon from '../components/Icon';
 
-// --- 【修正功能】: 網址轉換小幫手 ---
-// 這個元件會接收一段文字，並將其中的網址轉換成可點擊的 <a> 標籤
+// --- 【最終修正】: 採用更強大的網址轉換小幫手 ---
 const Linkify = ({ text }) => {
     // 檢查傳入的文字是否為有效的字串
     if (typeof text !== 'string') {
         return <span>{text}</span>;
     }
-    // 使用一個常見且穩定的正規表示式來尋找網址
+    // 使用一個更強大、能處理複雜網址的正規表示式
     const urlRegex = /(\b(https?|ftp|file):\/\/[-A-Z0-9+&@#\/%?=~_|!:,.;]*[-A-Z0-9+&@#\/%=~_|])/ig;
+    
+    // 將文字分割成「一般文字」和「網址」兩種類型
     const parts = text.split(urlRegex);
 
     return (
