@@ -1,5 +1,4 @@
 import React, { useState, useEffect } from 'react';
-// 【修正處】: 在下面的 import 清單中，加入了 updateDoc 和 arrayUnion
 import { onAuthStateChanged, signOut } from 'firebase/auth';
 import { doc, getDoc, setDoc, updateDoc, arrayUnion, serverTimestamp } from 'firebase/firestore';
 
@@ -38,6 +37,7 @@ function App() {
                         photoURL: currentUser.photoURL || '',
                         personalInfo: '新成員',
                         isApproved: true,
+                        isAdmin: false, // 【修改處】: 新成員預設不是管理員
                         createdAt: serverTimestamp()
                     };
                     await setDoc(userDocRef, newUserProfile);
@@ -50,12 +50,10 @@ function App() {
                 const generalChatSnap = await getDoc(generalChatRef);
 
                 if (generalChatSnap.exists()) {
-                    // 如果聊天室已存在，就用 arrayUnion 把使用者加進去 (這個方法能防止重複加入)
                     await updateDoc(generalChatRef, {
                         members: arrayUnion(currentUser.uid)
                     });
                 } else {
-                    // 如果聊天室不存在，就建立一個，並把目前使用者當作第一個成員
                     await setDoc(generalChatRef, {
                         name: "公開聊天室",
                         type: "group",
@@ -102,7 +100,7 @@ function MainApp({ user, userData, appId }) {
     const renderContent = () => {
         switch (activeTab) {
             case 'announcements':
-                return <Announcements user={user} appId={appId} />;
+                return <Announcements user={user} userData={userData} appId={appId} />;
             case 'calendar':
                 return <Calendar user={user} appId={appId} />;
             case 'chat':
@@ -110,7 +108,7 @@ function MainApp({ user, userData, appId }) {
             case 'profile':
                 return <Profile user={user} userData={userData} appId={appId} />;
             default:
-                return <Announcements user={user} appId={appId} />;
+                return <Announcements user={user} userData={userData} appId={appId} />;
         }
     };
 
