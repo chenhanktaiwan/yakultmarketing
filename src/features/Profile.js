@@ -1,13 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { 
     updateProfile, 
-    updatePassword, 
-    multiFactor,
-    PhoneAuthProvider,
-    PhoneMultiFactorGenerator,
-    RecaptchaVerifier,
-    GoogleAuthProvider,
-    reauthenticateWithPopup
+    updatePassword
 } from 'firebase/auth';
 import { doc, updateDoc, collection, onSnapshot, deleteDoc } from 'firebase/firestore';
 import { auth, db } from '../firebase/config';
@@ -17,6 +11,7 @@ import Modal from '../components/Modal';
 // --- 主要 Profile 元件 ---
 function Profile({ user, userData, appId }) {
     
+    // 將所有 Hooks (useState, useEffect 等) 都移到元件的最頂部
     const CLOUDINARY_CLOUD_NAME = process.env.REACT_APP_CLOUDINARY_CLOUD_NAME;
     const CLOUDINARY_UPLOAD_PRESET = process.env.REACT_APP_CLOUDINARY_UPLOAD_PRESET;
 
@@ -28,9 +23,6 @@ function Profile({ user, userData, appId }) {
     const fileInputRef = useRef(null);
     const [allUsers, setAllUsers] = useState([]);
     const [isPasswordModalOpen, setIsPasswordModalOpen] = useState(false);
-    const [is2faModalOpen, setIs2faModalOpen] = useState(false);
-    
-    const is2faEnabled = user && user.multiFactor && user.multiFactor.enrolledFactors && user.multiFactor.enrolledFactors.length > 0;
 
     useEffect(() => {
         if (!appId) return;
@@ -42,6 +34,7 @@ function Profile({ user, userData, appId }) {
         return () => unsubscribe();
     }, [appId]);
 
+    // 保護機制，確保資料載入完成
     if (!user || !userData) {
         return <div className="text-center p-8">正在載入成員資料...</div>;
     }
@@ -119,20 +112,6 @@ function Profile({ user, userData, appId }) {
         }
     };
 
-    const handleDisable2FA = async () => {
-        if (!window.confirm("確定要停用兩步驟驗證嗎？這會降低您帳號的安全性。")) return;
-        try {
-            const multiFactorUser = multiFactor(user);
-            const factorId = multiFactorUser.enrolledFactors[0].uid;
-            await multiFactorUser.unenroll(factorId);
-            alert("兩步驟驗證已成功停用。");
-            window.location.reload();
-        } catch (error) {
-            console.error("停用 2FA 失敗:", error);
-            alert(`停用 2FA 時發生錯誤: ${error.message}`);
-        }
-    };
-
     return (
         <div>
             <h2 className="text-3xl font-bold text-gray-800 mb-6">成員專區</h2>
@@ -196,21 +175,16 @@ function Profile({ user, userData, appId }) {
                             <p className="text-sm text-gray-600 mt-2 mb-3">您可以為您的 Google 帳號新增一組獨立密碼，用於備用登入。</p>
                             <button onClick={() => setIsPasswordModalOpen(true)} className="w-full bg-gray-200 text-gray-800 px-4 py-2 rounded-lg hover:bg-gray-300">設定/變更密碼</button>
                         </div>
-                         <div className="p-4 border border-gray-200 rounded-lg">
+                         <div className="p-4 border border-dashed border-gray-300 rounded-lg">
                             <div className="flex items-center gap-3"><Icon name="shield-check" className="text-gray-500" /><h4 className="font-semibold text-gray-800">兩步驟驗證 (2FA)</h4></div>
-                            <p className="text-sm text-gray-600 mt-2 mb-3">透過手機簡訊驗證碼，大幅提升帳號安全性。</p>
-                            {is2faEnabled ? (
-                                <button onClick={handleDisable2FA} className="w-full bg-red-500 text-white px-4 py-2 rounded-lg hover:bg-red-600">停用 2FA</button>
-                            ) : (
-                                <button onClick={() => setIs2faModalOpen(true)} className="w-full bg-green-500 text-white px-4 py-2 rounded-lg hover:bg-green-600">啟用 2FA</button>
-                            )}
+                            <p className="text-sm text-gray-600 mt-2 mb-3">此功能因平台安全限制暫時停用，我們正在尋找更穩定的解決方案。</p>
+                            <button disabled className="w-full bg-gray-300 text-gray-500 px-4 py-2 rounded-lg cursor-not-allowed">啟用 2FA</button>
                         </div>
                     </div>
                 </div>
             </div>
 
             <PasswordModal isOpen={isPasswordModalOpen} onClose={() => setIsPasswordModalOpen(false)} user={user} />
-            <Sms2faModal isOpen={is2faModalOpen} onClose={() => setIs2faModalOpen(false)} user={user} />
         </div>
     );
 }
@@ -270,114 +244,6 @@ function PasswordModal({ isOpen, onClose, user }) {
                     </button>
                 </div>
             </form>
-        </Modal>
-    );
-}
-
-// --- SMS 簡訊 2FA 設定 Modal 元件 ---
-function Sms2faModal({ isOpen, onClose, user }) {
-    const [phoneNumber, setPhoneNumber] = useState('');
-    const [verificationCode, setVerificationCode] = useState('');
-    const [verificationId, setVerificationId] = useState(null);
-    const [error, setError] = useState('');
-    const [isLoading, setIsLoading] = useState(false);
-    const recaptchaVerifierRef = useRef(null);
-
-    useEffect(() => {
-        if (isOpen && !recaptchaVerifierRef.current) {
-            recaptchaVerifierRef.current = new RecaptchaVerifier(auth, 'recaptcha-container', {
-                'size': 'invisible',
-                'callback': () => { console.log("reCAPTCHA solved"); }
-            });
-            recaptchaVerifierRef.current.render();
-        }
-    }, [isOpen]);
-
-    const handleSendCode = async () => {
-        setError('');
-        if (!/^\+[1-9]\d{1,14}$/.test(phoneNumber)) {
-            setError("請輸入包含國碼的有效手機號碼 (例如: +886912345678)。");
-            return;
-        }
-        setIsLoading(true);
-        try {
-            // 【最終修正】: 在發送簡訊前，先要求使用者重新驗證身份
-            const provider = new GoogleAuthProvider();
-            await reauthenticateWithPopup(user, provider);
-            
-            // 驗證成功後，才繼續發送簡訊
-            const multiFactorSession = await multiFactor(user).getSession();
-            const phoneInfoOptions = {
-                phoneNumber: phoneNumber,
-                session: multiFactorSession
-            };
-            const phoneAuthProvider = new PhoneAuthProvider(auth);
-            const verId = await phoneAuthProvider.verifyPhoneNumber(phoneInfoOptions, recaptchaVerifierRef.current);
-            setVerificationId(verId);
-            alert("驗證碼已發送！");
-        } catch (error) {
-            console.error("發送簡訊失敗:", error);
-            if (error.code === 'auth/popup-closed-by-user') {
-                setError("您取消了驗證程序。");
-            } else {
-                setError(`發送簡訊失敗: ${error.message}`);
-            }
-        } finally {
-            setIsLoading(false);
-        }
-    };
-
-    const handleVerifyCode = async () => {
-        setError('');
-        if (verificationCode.length !== 6) {
-            setError("請輸入 6 位數的驗證碼。");
-            return;
-        }
-        setIsLoading(true);
-        try {
-            const cred = PhoneAuthProvider.credential(verificationId, verificationCode);
-            const multiFactorAssertion = PhoneMultiFactorGenerator.assertion(cred);
-            await multiFactor(user).enroll(multiFactorAssertion, `手機 (${phoneNumber})`);
-            alert("兩步驟驗證已成功啟用！");
-            window.location.reload();
-        } catch (error) {
-            console.error("驗證碼驗證失敗:", error);
-            setError("驗證碼錯誤或已過期，請再試一次。");
-        } finally {
-            setIsLoading(false);
-        }
-    };
-
-    return (
-        <Modal isOpen={isOpen} onClose={onClose} title="啟用兩步驟驗證 (SMS)">
-            <div id="recaptcha-container"></div>
-            {!verificationId ? (
-                <div>
-                    <p className="mb-4">請輸入您的手機號碼以接收簡訊驗證碼。請務必包含國碼。</p>
-                    <label className="block text-gray-700 text-sm font-bold mb-2" htmlFor="phone-number">手機號碼</label>
-                    <input id="phone-number" type="tel" value={phoneNumber} onChange={(e) => setPhoneNumber(e.target.value)} placeholder="+886912345678" className="shadow appearance-none border rounded w-full py-2 px-3" />
-                    {error && <p className="text-red-500 text-sm mt-4">{error}</p>}
-                    <div className="flex justify-end gap-3 mt-6">
-                        <button type="button" onClick={onClose} className="bg-gray-200 text-gray-800 px-4 py-2 rounded-lg hover:bg-gray-300">取消</button>
-                        <button onClick={handleSendCode} className="bg-blue-500 text-white px-4 py-2 rounded-lg hover:bg-blue-600" disabled={isLoading}>
-                            {isLoading ? '驗證中...' : '發送驗證碼'}
-                        </button>
-                    </div>
-                </div>
-            ) : (
-                <div>
-                    <p className="mb-4">我們已將 6 位數驗證碼發送到 <span className="font-semibold">{phoneNumber}</span>。請在下方輸入以完成設定。</p>
-                    <label className="block text-gray-700 text-sm font-bold mb-2" htmlFor="verification-code">驗證碼</label>
-                    <input id="verification-code" type="text" value={verificationCode} onChange={(e) => setVerificationCode(e.target.value)} placeholder="123456" maxLength="6" className="text-center text-2xl tracking-[.5em] w-48 mx-auto shadow appearance-none border rounded py-2 px-3" />
-                    {error && <p className="text-red-500 text-sm mt-4">{error}</p>}
-                    <div className="flex justify-end gap-3 mt-6">
-                        <button type="button" onClick={() => setVerificationId(null)} className="bg-gray-200 text-gray-800 px-4 py-2 rounded-lg hover:bg-gray-300">返回</button>
-                        <button onClick={handleVerifyCode} className="bg-green-500 text-white px-4 py-2 rounded-lg hover:bg-green-600" disabled={isLoading}>
-                            {isLoading ? '驗證中...' : '驗證並啟用'}
-                        </button>
-                    </div>
-                </div>
-            )}
         </Modal>
     );
 }
