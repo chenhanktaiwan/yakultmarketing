@@ -1,6 +1,6 @@
 import React from 'react';
 import { GoogleAuthProvider, signInWithPopup } from 'firebase/auth';
-import { auth } from '../firebase/config'; // <-- 從我們的設定檔匯入
+import { auth } from '../firebase/config';
 
 function LoginScreen() {
     const handleGoogleLogin = async () => {
@@ -16,7 +16,6 @@ function LoginScreen() {
     return (
         <div className="flex flex-col items-center justify-center h-screen bg-[#F0F3F4]">
             <div className="text-center p-10 bg-white rounded-xl shadow-lg">
-                {/* 【修改處】 */}
                 <h1 className="text-4xl font-bold text-[#4A666F] mb-2">養樂多行銷團隊工作站</h1>
                 <p className="text-gray-600 mb-8">專業團隊的協作平台</p>
                 <button
