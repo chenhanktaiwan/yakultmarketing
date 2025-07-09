@@ -61,8 +61,8 @@ const LinkPreview = ({ url }) => {
     );
 };
 
-// --- 【全新修正】: 訊息顯示元件 ---
-const MessageRenderer = ({ text }) => {
+// --- 【全新修正】: 只負責將文字中的網址變成連結的元件 ---
+const LinkifyText = ({ text }) => {
     // 使用 React.useMemo 來記憶計算結果，避免不必要的重複渲染
     const content = React.useMemo(() => {
         if (typeof text !== 'string' || !text) {
@@ -73,10 +73,6 @@ const MessageRenderer = ({ text }) => {
         const parts = [];
         let lastIndex = 0;
         let match;
-
-        // 找出第一個網址，用於預覽
-        const firstUrlMatch = text.match(urlRegex);
-        const firstUrl = firstUrlMatch ? firstUrlMatch[0] : null;
 
         // 重新建立一個正規表示式實例，以確保 exec 的狀態正確
         const loopRegex = new RegExp(urlRegex.source, 'ig');
@@ -108,12 +104,7 @@ const MessageRenderer = ({ text }) => {
             parts.push(<span key={`text-${lastIndex}`}>{text.substring(lastIndex)}</span>);
         }
 
-        return (
-            <div>
-                {parts}
-                {firstUrl && <LinkPreview url={firstUrl} />}
-            </div>
-        );
+        return <>{parts}</>;
     }, [text]);
 
     return content;
@@ -303,16 +294,24 @@ function Chat({ user, appId }) {
                         </div>
                         <div className="flex-grow p-6 overflow-y-auto bg-gray-50">
                             <div className="space-y-4">
-                                {messages.map(msg => (
-                                    <div key={msg.id} className={`flex items-end gap-3 ${msg.senderId === user.uid ? 'justify-end' : 'justify-start'}`}>
-                                        {msg.senderId !== user.uid && ( <img src={msg.senderPhotoURL || `https://placehold.co/40x40/5F828B/FFFFFF?text=${msg.senderName ? msg.senderName[0] : '?'}`} alt="sender" className="w-8 h-8 rounded-full" /> )}
-                                        <div className={`max-w-xs lg:max-w-md px-4 py-2 rounded-xl ${msg.senderId === user.uid ? 'bg-[#5F828B] text-white' : 'bg-white shadow-sm'}`}>
-                                            <div className="text-sm break-words"><MessageRenderer text={msg.text} /></div>
-                                            <p className={`text-xs mt-1 text-right ${msg.senderId === user.uid ? 'text-gray-300' : 'text-gray-500'}`}>{msg.timestamp ? new Date(msg.timestamp.seconds * 1000).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'}) : ''}</p>
+                                {messages.map(msg => {
+                                    const urlRegex = /(\b(https?|ftp|file):\/\/[-A-Z0-9+&@#\/%?=~_|!:,.;]*[-A-Z0-9+&@#\/%=~_|])/ig;
+                                    const firstUrl = msg.text?.match(urlRegex)?.[0];
+
+                                    return (
+                                        <div key={msg.id} className={`flex items-end gap-3 ${msg.senderId === user.uid ? 'justify-end' : 'justify-start'}`}>
+                                            {msg.senderId !== user.uid && ( <img src={msg.senderPhotoURL || `https://placehold.co/40x40/5F828B/FFFFFF?text=${msg.senderName ? msg.senderName[0] : '?'}`} alt="sender" className="w-8 h-8 rounded-full" /> )}
+                                            <div className={`max-w-xs lg:max-w-md px-4 py-2 rounded-xl ${msg.senderId === user.uid ? 'bg-[#5F828B] text-white' : 'bg-white shadow-sm'}`}>
+                                                <div className="text-sm break-words">
+                                                    <LinkifyText text={msg.text} />
+                                                    {firstUrl && <LinkPreview url={firstUrl} />}
+                                                </div>
+                                                <p className={`text-xs mt-1 text-right ${msg.senderId === user.uid ? 'text-gray-300' : 'text-gray-500'}`}>{msg.timestamp ? new Date(msg.timestamp.seconds * 1000).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'}) : ''}</p>
+                                            </div>
+                                             {msg.senderId === user.uid && ( <img src={user.photoURL || `https://placehold.co/40x40/5F828B/FFFFFF?text=${user.displayName[0]}`} alt="sender" className="w-8 h-8 rounded-full" /> )}
                                         </div>
-                                         {msg.senderId === user.uid && ( <img src={user.photoURL || `https://placehold.co/40x40/5F828B/FFFFFF?text=${user.displayName[0]}`} alt="sender" className="w-8 h-8 rounded-full" /> )}
-                                    </div>
-                                ))}
+                                    );
+                                })}
                             </div>
                             <div ref={messagesEndRef} />
                         </div>
