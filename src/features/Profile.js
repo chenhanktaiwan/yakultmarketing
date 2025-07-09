@@ -5,7 +5,9 @@ import {
     multiFactor,
     PhoneAuthProvider,
     PhoneMultiFactorGenerator,
-    RecaptchaVerifier
+    RecaptchaVerifier,
+    GoogleAuthProvider,
+    reauthenticateWithPopup
 } from 'firebase/auth';
 import { doc, updateDoc, collection, onSnapshot, deleteDoc } from 'firebase/firestore';
 import { auth, db } from '../firebase/config';
@@ -302,6 +304,10 @@ function Sms2faModal({ isOpen, onClose, user }) {
         }
         setIsLoading(true);
         try {
+            // 【最終修正】: 在發送簡訊前，先要求使用者重新驗證身份
+            const provider = new GoogleAuthProvider();
+            await reauthenticateWithPopup(user, provider);
+            
             const multiFactorSession = await multiFactor(user).getSession();
             const phoneInfoOptions = {
                 phoneNumber: phoneNumber,
@@ -313,8 +319,8 @@ function Sms2faModal({ isOpen, onClose, user }) {
             alert("驗證碼已發送！");
         } catch (error) {
             console.error("發送簡訊失敗:", error);
-            if (error.code === 'auth/requires-recent-login') {
-                 setError("安全驗證失敗。請登出後立即重新登入，然後再試一次。");
+            if (error.code === 'auth/popup-closed-by-user') {
+                setError("您取消了驗證程序。");
             } else {
                 setError(`發送簡訊失敗，請確認手機號碼是否正確，或稍後再試。`);
             }
@@ -356,7 +362,7 @@ function Sms2faModal({ isOpen, onClose, user }) {
                     <div className="flex justify-end gap-3 mt-6">
                         <button type="button" onClick={onClose} className="bg-gray-200 text-gray-800 px-4 py-2 rounded-lg hover:bg-gray-300">取消</button>
                         <button onClick={handleSendCode} className="bg-blue-500 text-white px-4 py-2 rounded-lg hover:bg-blue-600" disabled={isLoading}>
-                            {isLoading ? '發送中...' : '發送驗證碼'}
+                            {isLoading ? '驗證中...' : '發送驗證碼'}
                         </button>
                     </div>
                 </div>
