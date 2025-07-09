@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect } from 'react';
 import { 
     onAuthStateChanged, 
     signOut,
@@ -12,7 +12,6 @@ import { doc, getDoc, setDoc, updateDoc, arrayUnion, serverTimestamp } from 'fir
 
 import { auth, db } from './firebase/config';
 import Icon from './components/Icon';
-import Modal from './components/Modal'; // 引用 Modal
 import Announcements from './features/Announcements';
 import Calendar from './features/Calendar';
 import Chat from './features/Chat';
@@ -20,13 +19,13 @@ import Profile from './features/Profile';
 import LoadingScreen from './features/LoadingScreen';
 import PendingApprovalScreen from './features/PendingApprovalScreen';
 
-// --- 【全新功能】: 處理 2FA 登入的彈出視窗 ---
-function MfaLoginModal({ resolver, onClose }) {
+// --- 【全新修正】: 將原本的 Modal 改為全頁式驗證畫面 ---
+function MfaVerificationScreen({ resolver, onCancel }) {
     const [verificationCode, setVerificationCode] = useState('');
     const [error, setError] = useState('');
     const [isLoading, setIsLoading] = useState(false);
     
-    // 在這個 Modal 中，我們只處理手機簡訊
+    // 從 resolver 中找到手機號碼提示
     const phoneFactor = resolver.hints.find(hint => hint.factorId === PhoneMultiFactorGenerator.FACTOR_ID);
 
     const handleVerifyCode = async (e) => {
@@ -40,47 +39,53 @@ function MfaLoginModal({ resolver, onClose }) {
         try {
             const cred = PhoneAuthProvider.credential(resolver.verificationId, verificationCode);
             const multiFactorAssertion = PhoneMultiFactorGenerator.assertion(cred);
+            // 驗證成功後，Firebase 會自動更新登入狀態，App 元件會重新渲染
             await resolver.resolveSignIn(multiFactorAssertion);
-            // 登入成功，關閉視窗
-            onClose();
         } catch (error) {
             console.error("2FA 登入驗證失敗:", error);
             setError("驗證碼錯誤或已過期，請再試一次。");
-        } finally {
             setIsLoading(false);
         }
+        // 成功時不需要手動關閉，因為 App 會自動切換畫面
     };
 
     return (
-        <Modal isOpen={true} onClose={onClose} title="兩步驟驗證">
-            <form onSubmit={handleVerifyCode}>
-                <p className="mb-4">我們已將驗證碼發送到您的手機 <span className="font-semibold">{phoneFactor.phoneNumber}</span>。請輸入以完成登入。</p>
-                <div className="mb-4">
-                    <label className="block text-gray-700 text-sm font-bold mb-2" htmlFor="mfa-code">6 位數驗證碼</label>
-                    <input 
-                        id="mfa-code"
-                        type="text" 
-                        value={verificationCode}
-                        onChange={(e) => setVerificationCode(e.target.value)}
-                        placeholder="123456"
-                        maxLength="6"
-                        className="text-center text-2xl tracking-[.5em] w-full shadow appearance-none border rounded py-2 px-3"
-                    />
-                </div>
-                {error && <p className="text-red-500 text-sm mb-4">{error}</p>}
-                <div className="flex justify-end gap-3">
-                    <button type="button" onClick={onClose} className="bg-gray-200 text-gray-800 px-4 py-2 rounded-lg hover:bg-gray-300">取消</button>
-                    <button type="submit" className="bg-green-500 text-white px-4 py-2 rounded-lg hover:bg-green-600" disabled={isLoading}>
-                        {isLoading ? '驗證中...' : '登入'}
-                    </button>
-                </div>
-            </form>
-        </Modal>
+        <div className="flex flex-col items-center justify-center h-screen bg-[#F0F3F4]">
+            <div className="w-full max-w-md text-center p-8 bg-white rounded-xl shadow-lg">
+                <h1 className="text-3xl font-bold text-[#4A666F] mb-4">兩步驟驗證</h1>
+                <p className="mb-6 text-gray-600">
+                    為了保護您的帳號安全，我們已將 6 位數驗證碼發送到您的手機 <span className="font-semibold">{phoneFactor?.phoneNumber}</span>。
+                </p>
+                <form onSubmit={handleVerifyCode}>
+                    <div className="mb-4">
+                        <label className="block text-gray-700 text-sm font-bold mb-2 sr-only" htmlFor="mfa-code">6 位數驗證碼</label>
+                        <input 
+                            id="mfa-code"
+                            type="text" 
+                            value={verificationCode}
+                            onChange={(e) => setVerificationCode(e.target.value)}
+                            placeholder="1 2 3 4 5 6"
+                            maxLength="6"
+                            className="text-center text-3xl tracking-[.5em] w-full shadow-inner appearance-none border rounded py-3 px-4"
+                        />
+                    </div>
+                    {error && <p className="text-red-500 text-sm mb-4">{error}</p>}
+                    <div className="flex flex-col sm:flex-row justify-center gap-3 mt-6">
+                        <button type="submit" className="w-full bg-green-500 text-white font-bold px-4 py-3 rounded-lg hover:bg-green-600 transition-colors disabled:bg-gray-400" disabled={isLoading}>
+                            {isLoading ? '驗證中...' : '驗證並登入'}
+                        </button>
+                        <button type="button" onClick={onCancel} className="w-full bg-gray-200 text-gray-800 px-4 py-2 rounded-lg hover:bg-gray-300 transition-colors">
+                            取消
+                        </button>
+                    </div>
+                </form>
+            </div>
+        </div>
     );
 }
 
 
-// --- 【全新修正】: 登入畫面，現在能處理 2FA 錯誤 ---
+// --- 登入畫面 (保持不變) ---
 function LoginScreen({ onMfaRequired }) {
     const handleGoogleLogin = async () => {
         const provider = new GoogleAuthProvider();
@@ -88,8 +93,6 @@ function LoginScreen({ onMfaRequired }) {
             await signInWithPopup(auth, provider);
         } catch (error) {
             if (error.code === 'auth/multi-factor-required') {
-                // 如果需要 2FA，就把 resolver 交給 App 元件處理
-                console.log("需要兩步驟驗證，開啟 Modal...");
                 onMfaRequired(error.resolver);
             } else {
                 console.error("Google 登入失敗:", error);
@@ -122,7 +125,6 @@ function App() {
     const [userData, setUserData] = useState(null);
     const [loading, setLoading] = useState(true);
     const [appId] = useState('default-app-id');
-    // 【全新狀態】: 用來處理 2FA 登入流程
     const [mfaResolver, setMfaResolver] = useState(null);
 
     useEffect(() => {
@@ -164,7 +166,6 @@ function App() {
                 setUserData(null);
             }
             setLoading(false);
-            // 登入狀態改變後，清除舊的 2FA resolver
             setMfaResolver(null);
         });
         return () => unsubscribe();
@@ -174,9 +175,9 @@ function App() {
         return <LoadingScreen message="載入中..." />;
     }
 
-    // 如果需要 2FA 驗證，顯示驗證 Modal
+    // 【修改處】: 將原本的 Modal 改為呼叫全頁式驗證畫面
     if (mfaResolver) {
-        return <MfaLoginModal resolver={mfaResolver} onClose={() => setMfaResolver(null)} />;
+        return <MfaVerificationScreen resolver={mfaResolver} onCancel={() => setMfaResolver(null)} />;
     }
 
     if (!user) {
